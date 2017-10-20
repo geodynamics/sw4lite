@@ -38,10 +38,15 @@ and the executable will be under `optimize_cuda_hostname/sw4lite`.
 
 More options are described in the Makefile.
 
-To run
-------
-An example input file is under `tests/pointsource/pointsource.in`, which solves the
-elastic wave equation for a single point source in a free space or half space. The input file is
+To run ------
+
+If you compile sw4lite with OpenMP, you need to assign the number of threads per
+MPI-task by setting the environment variable OMP_NUM_THREADS, e.g.,
+```
+setenv OMP_NUM_THREADS 4
+```
+An example input file is provided under `tests/pointsource/pointsource.in`. This case solves the
+elastic wave equation for a single point source in a whole space or a half space. The input file is
 given as argument to the executable, as in the example:
 ```
 mpirun -np 16 sw4lite pointsource.in
