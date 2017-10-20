@@ -38,7 +38,8 @@ and the executable will be under `optimize_cuda_hostname/sw4lite`.
 
 More options are described in the Makefile.
 
-To run ------
+To run
+------
 
 If you compile sw4lite with OpenMP, you need to assign the number of threads per
 MPI-task by setting the environment variable OMP_NUM_THREADS, e.g.,
