@@ -41,7 +41,7 @@ More options are described in the Makefile.
 To run
 ------
 
-If you compile sw4lite with OpenMP, you need to assign the number of threads per
+To run sw4lite with OpenMP threading, you need to assign the number of threads per
 MPI-task by setting the environment variable OMP_NUM_THREADS, e.g.,
 ```
 setenv OMP_NUM_THREADS 4
