@@ -29,6 +29,44 @@
 // # You should have received a copy of the GNU General Public License
 // # along with this program; if not, write to the Free Software
 // # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA 
+//  WPP LICENSE
+// ----------------------------------------------------------------------
+// WPP - Wave propagation Program
+// ----------------------------------------------------------------------
+// Copyright (C) 2007, Lawrence Livermore National Security, LLC.  
+// Produced at the Lawrence Livermore National Laboratory
+// 
+// Written by:
+// 
+// Daniel   Appelo     (appelo2@llnl.gov) 
+// Kathleen McCandless (mccandless2@llnl.gov)
+// Anders   Petersson  (andersp@llnl.gov)
+// Bjorn    Sjogreen   (sjogreen2@llnl.gov)
+// 
+// Alums:
+// Stefan Nilsson      
+// 
+// CODE-227123 All rights reserved.
+// 
+// Thie file is part of WPP, v1.1
+// 
+// Please also read docs/GPLLICENSE.txt which contains 
+// "Our Notice and GNU General Public License"
+// 
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; version 2, dated June 1991.
+// 
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// terms and conditions of the GNU General Public License for more details.
+// 
+// You should have received a copy of the GNU General Public License along with
+// this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+// Place, Suite 330, Boston MA 02111-1307 USA.
+// ----------------------------------------------------------------------
+//  WPP LICENSE
 #ifndef WPP_BYTESWAPPER_H
 #define WPP_BYTESWAPPER_H
 

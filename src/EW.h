@@ -1,34 +1,3 @@
-//  SW4 LICENSE
-// # ----------------------------------------------------------------------
-// # SW4 - Seismic Waves, 4th order
-// # ----------------------------------------------------------------------
-// # Copyright (c) 2013, Lawrence Livermore National Security, LLC. 
-// # Produced at the Lawrence Livermore National Laboratory. 
-// # 
-// # Written by:
-// # N. Anders Petersson (petersson1@llnl.gov)
-// # Bjorn Sjogreen      (sjogreen2@llnl.gov)
-// # 
-// # LLNL-CODE-643337 
-// # 
-// # All rights reserved. 
-// # 
-// # This file is part of SW4, Version: 1.0
-// # 
-// # Please also read LICENCE.txt, which contains "Our Notice and GNU General Public License"
-// # 
-// # This program is free software; you can redistribute it and/or modify
-// # it under the terms of the GNU General Public License (as published by
-// # the Free Software Foundation) version 2, dated June 1991. 
-// # 
-// # This program is distributed in the hope that it will be useful, but
-// # WITHOUT ANY WARRANTY; without even the IMPLIED WARRANTY OF
-// # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the terms and
-// # conditions of the GNU General Public License for more details. 
-// # 
-// # You should have received a copy of the GNU General Public License
-// # along with this program; if not, write to the Free Software
-// # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA 
 #ifndef SW4_EW
 #define SW4_EW
 
@@ -37,19 +6,30 @@
 #include <string>
 #include <vector>
 #include <iostream>
-
 #include "sw4.h"
 #include "Sarray.h"
 #include "SuperGrid.h"
 #include "MaterialData.h"
 #include "TimeSeries.h"
+#include <unordered_map>
+#include <tuple>
 using namespace std;
 
 class Source;
 class GridPointSource;
 class EWCuda;
 class CheckPoint;
-
+#include <stdio.h>
+#ifdef RAJA03
+#include "RAJA/RAJA.hpp"
+#else
+#include "RAJA/RAJA.hxx"
+#endif
+using namespace RAJA;
+typedef std::tuple<MPI_Request *, float_sw4*, float_sw4*, std::tuple<int,int,int>, MPI_Request*> AMPI_Ret_type;
+#include <cstdio>
+#define PREFETCH(input_ptr) if (prefetch(input_ptr)==1) printf("BAD PREFETCH ERROR IN FILE %s, line %d\n",__FILE__,__LINE__);
+#define PREFETCHFORCED(input_ptr) if (prefetchforced(input_ptr)==1) printf("BAD PREFETCH ERROR IN FILE %s, line %d\n",__FILE__,__LINE__);
 class EW
 {
  public:
@@ -57,7 +37,7 @@ class EW
    void timesteploop( vector<Sarray>& U, vector<Sarray>& Um);
    void timeStepLoopdGalerkin();
    EW( const string& filename );
-
+   ~EW();
    int computeEndGridPoint( float_sw4 maxval, float_sw4 h );
    bool startswith(const char begin[], char *line);
    void badOption(string name, char* option) const;
@@ -90,6 +70,7 @@ class EW
    void cycleSolutionArrays(vector<Sarray> & a_Um, vector<Sarray> & a_U,
 			    vector<Sarray> & a_Up ) ;
    void Force(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSource*> point_sources, bool tt );
+   void ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSource*> point_sources, bool tt );
    void ForceCU( float_sw4 a_t, Sarray* dev_F, bool tt, int st );
    void evalRHS( vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
 		 vector<Sarray> & a_Uacc );
@@ -108,6 +89,9 @@ class EW
    void evalDpDmInTimeCU(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
 			 vector<Sarray> & a_Uacc, int st );
    void communicate_array( Sarray& U, int g );
+   void communicate_array_async( Sarray& U, int g );
+   void communicate_array_org( Sarray& U, int g );
+   void communicate_array_new( Sarray& U, int g );
    void cartesian_bc_forcing( float_sw4 t, vector<float_sw4**> & a_BCForcing,
 			      vector<Source*>& a_sources );
    void cartesian_bc_forcingCU( float_sw4 t, vector<float_sw4**> & a_BCForcing,
@@ -127,22 +111,24 @@ class EW
    void printTime( int cycle, float_sw4 t, bool force ) const;
    bool exactSol(float_sw4 a_t, vector<Sarray> & a_U, vector<Source*>& sources );
 
-   float_sw4 SmoothWave(float_sw4 t, float_sw4 R, float_sw4 c);
-   float_sw4 VerySmoothBump(float_sw4 t, float_sw4 R, float_sw4 c);
-   float_sw4 C6SmoothBump(float_sw4 t, float_sw4 R, float_sw4 c);
-   float_sw4 Gaussian(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f );
-   float_sw4 d_SmoothWave_dt(float_sw4 t, float_sw4 R, float_sw4 c);
-   float_sw4 d_VerySmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c);
-   float_sw4 d_C6SmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c);
-   float_sw4 d_Gaussian_dt(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f);
-   float_sw4 SWTP(float_sw4 Lim, float_sw4 t);   
-   float_sw4 VSBTP(float_sw4 Lim, float_sw4 t);
-   float_sw4 C6SBTP(float_sw4 Lim, float_sw4 t);
-   float_sw4 SmoothWave_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta);
-   float_sw4 VerySmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta);
-   float_sw4 C6SmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta);
-   float_sw4 Gaussian_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 f, float_sw4 alpha, float_sw4 beta);
-   void get_exact_point_source( float_sw4* up, float_sw4 t, int g, Source& source,
+   RAJA_HOST_DEVICE float_sw4 SmoothWave(float_sw4 t, float_sw4 R, float_sw4 c);
+   RAJA_HOST_DEVICE float_sw4 VerySmoothBump(float_sw4 t, float_sw4 R, float_sw4 c);
+   RAJA_HOST_DEVICE float_sw4 C6SmoothBump(float_sw4 t, float_sw4 R, float_sw4 c);
+   RAJA_HOST_DEVICE float_sw4 Gaussian(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f );
+   RAJA_HOST_DEVICE float_sw4 d_SmoothWave_dt(float_sw4 t, float_sw4 R, float_sw4 c);
+   RAJA_HOST_DEVICE float_sw4 d_VerySmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c);
+   RAJA_HOST_DEVICE float_sw4 d_C6SmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c);
+   RAJA_HOST_DEVICE float_sw4 d_Gaussian_dt(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f);
+   RAJA_HOST_DEVICE float_sw4 SWTP(float_sw4 Lim, float_sw4 t);   
+   RAJA_HOST_DEVICE float_sw4 VSBTP(float_sw4 Lim, float_sw4 t);
+   RAJA_HOST_DEVICE float_sw4 C6SBTP(float_sw4 Lim, float_sw4 t);
+   RAJA_HOST_DEVICE float_sw4 SmoothWave_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta);
+   RAJA_HOST_DEVICE float_sw4 VerySmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta);
+   RAJA_HOST_DEVICE float_sw4 C6SmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta);
+   RAJA_HOST_DEVICE float_sw4 Gaussian_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 f, float_sw4 alpha, float_sw4 beta);
+   void get_exact_point_source( double* up, double t, int g, Source& source,
+				int* wind=NULL );
+   void get_exact_point_source2( double* up, double t, int g, Source& source,
 				int* wind=NULL );
    void normOfDifference( vector<Sarray> & a_Uex,  vector<Sarray> & a_U, float_sw4 &diffInf, 
 			  float_sw4 &diffL2, float_sw4 &xInf, vector<Source*>& a_globalSources );
@@ -221,8 +207,8 @@ class EW
    void predfort( int ib, int ie, int jb, int je, int kb, int ke, float_sw4* up,
 		   float_sw4* u, float_sw4* um, float_sw4* lu, float_sw4* fo,
 		  float_sw4* rho, float_sw4 dt2 );
-   void dpdmtfort( int ib, int ie, int jb, int je, int kb, int ke, float_sw4* up,
-		   float_sw4* u, float_sw4* um, float_sw4* u2, float_sw4 dt2i );
+   void dpdmtfort( int ib, int ie, int jb, int je, int kb, int ke, const float_sw4* up,
+		   const float_sw4* u, const float_sw4* um, float_sw4* u2, float_sw4 dt2i );
    void solerr3fort( int ib, int ie, int jb, int je, int kb, int ke,
 		      float_sw4 h, float_sw4* uex, float_sw4* u, float_sw4& li,
 		      float_sw4& l2, float_sw4& xli, float_sw4 zmin, float_sw4 x0,
@@ -244,10 +230,10 @@ class EW
 		  float_sw4* strx, float_sw4* stry );
    void addsgd4fort( int ifirst, int ilast, int jfirst, int jlast,
 		      int kfirst, int klast,
-		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-		      float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
-		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-		      float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
+		      float_sw4* a_up, const float_sw4* a_u, const float_sw4* a_um, const float_sw4* a_rho,
+		      const float_sw4* a_dcx,  const float_sw4* a_dcy,  const float_sw4* a_dcz,
+		      const float_sw4* a_strx, const float_sw4* a_stry, const float_sw4* a_strz,
+		      const float_sw4* a_cox,  const float_sw4* a_coy,  const float_sw4* a_coz,
 		     float_sw4 beta );
    void addsgd4fort_indrev( int ifirst, int ilast, int jfirst, int jlast,
 		      int kfirst, int klast,
@@ -361,6 +347,15 @@ class EW
    vector<MPI_Datatype> m_send_type1;
    vector<MPI_Datatype> m_send_type3;
    vector<MPI_Datatype> m_send_type4; // metric
+
+   vector<std::tuple<int,int,int>> send_type1;
+   vector<std::tuple<int,int,int>> send_type3;
+   vector<std::tuple<int,int,int>> send_type4;
+
+   vector<std::tuple<float_sw4*,float_sw4*>> bufs_type1;
+   vector<std::tuple<float_sw4*,float_sw4*>> bufs_type3;
+   vector<std::tuple<float_sw4*,float_sw4*>> bufs_type4;
+   //vector<std::tuple<float_sw4*,float_sw4*>> bufs_typed;
    MPI_Datatype m_mpifloat;
 
    //   vector<MPI_Datatype> m_send_type21; // anisotropic
@@ -377,8 +372,12 @@ class EW
    vector<Sarray> mUm;
 
    // SBP boundary operator coefficients and info
+#ifdef CUDA_CODE
+   float_sw4 *m_iop,*m_iop2,*m_bop2,*m_sbop,*m_acof,*m_bop,*m_bope,*m_ghcof,*m_hnorm;
+#else
    float_sw4 m_iop[5], m_iop2[5], m_bop2[24], m_sbop[5], m_acof[384], m_bop[24];
    float_sw4 m_bope[48], m_ghcof[6], m_hnorm[4];
+#endif
    vector<int*> m_onesided; 
 
    // Time stepping variables
@@ -431,6 +430,8 @@ class EW
    vector<int> m_identsources;
    GridPointSource** dev_point_sources;
    int* dev_identsources;
+   float_sw4 *ForceVector;
+   float_sw4 **ForceAddress;
 
    // Supergrid boundary conditions
    float_sw4 m_supergrid_damping_coefficient;
@@ -462,6 +463,30 @@ class EW
    void CheckCudaCall(cudaError_t command, const char * commandName, const char * fileName, int line);
 #endif
    
-};
+   void getbuffer_device(float_sw4 *data, float_sw4* buf, std::tuple<int,int,int> &mtype );
+   void putbuffer_device(float_sw4 *data, float_sw4* buf, std::tuple<int,int,int> &mtype );
+   size_t memsize(void *ptr){ return map[ptr];}
+ private:
+   std::unordered_map<void*,size_t> map;
+   std::unordered_map<void*,bool> prefetched;
+   int prefetch(void *ptr,int device=0);
+   int prefetchforced(void *ptr,int device=0);
+   float_sw4* newmanaged(size_t len);
+   float_sw4* newmanagedh(size_t len);
+   void delmanaged(float_sw4* &dptr);
+   void AMPI_Sendrecv(float_sw4* a, int scount, std::tuple<int,int,int> &sendt, int sentto, int stag,
+		      float_sw4* b, int rcount, std::tuple<int,int,int> &recvt, int recvfrom, int rtag,
+		      std::tuple<float_sw4*,float_sw4*> &buf,
+		      MPI_Comm comm, MPI_Status *status);
+   AMPI_Ret_type
+     AMPI_SendrecvSplit(float_sw4* a, int scount, std::tuple<int,int,int> &sendt, int sentto, int stag,
+		      float_sw4* b, int rcount, std::tuple<int,int,int> &recvt, int recvfrom, int rtag,
+		      std::tuple<float_sw4*,float_sw4*> &buf,
+		      MPI_Comm comm, MPI_Status *status);
+   void getbuffer(float_sw4 *data, float_sw4* buf, std::tuple<int,int,int> &mtype );
 
+   void putbuffer(float_sw4 *data, float_sw4* buf, std::tuple<int,int,int> &mtype );
+   void AMPI_SendrecvSync(std::vector<AMPI_Ret_type> &list);
+   void buffdiff(float_sw4* buf1, float_sw4*buf2,std::tuple<int,int,int> &mtype);
+};
 #endif

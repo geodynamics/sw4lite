@@ -1,34 +1,3 @@
-//  SW4 LICENSE
-// # ----------------------------------------------------------------------
-// # SW4 - Seismic Waves, 4th order
-// # ----------------------------------------------------------------------
-// # Copyright (c) 2013, Lawrence Livermore National Security, LLC. 
-// # Produced at the Lawrence Livermore National Laboratory. 
-// # 
-// # Written by:
-// # N. Anders Petersson (petersson1@llnl.gov)
-// # Bjorn Sjogreen      (sjogreen2@llnl.gov)
-// # 
-// # LLNL-CODE-643337 
-// # 
-// # All rights reserved. 
-// # 
-// # This file is part of SW4, Version: 1.0
-// # 
-// # Please also read LICENCE.txt, which contains "Our Notice and GNU General Public License"
-// # 
-// # This program is free software; you can redistribute it and/or modify
-// # it under the terms of the GNU General Public License (as published by
-// # the Free Software Foundation) version 2, dated June 1991. 
-// # 
-// # This program is distributed in the hope that it will be useful, but
-// # WITHOUT ANY WARRANTY; without even the IMPLIED WARRANTY OF
-// # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the terms and
-// # conditions of the GNU General Public License for more details. 
-// # 
-// # You should have received a copy of the GNU General Public License
-// # along with this program; if not, write to the Free Software
-// # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA 
 #include "sw4.h"
 
 #include "EW.h"
@@ -60,7 +29,15 @@
 
 #include "F77_FUNC.h"
 #include "EWCuda.h"
+#include "mynvtx.h"
+#include "policies.h"
+#include <chrono>
+#include <thread>
 
+void PrintPointerAttributes(void *ptr);
+#ifdef CUDA_CODE
+bool IsManaged(void *ptr);
+#endif
 #ifndef SW4_CROUTINES
 extern "C" {
    void F77_FUNC(rhs4th3fortsgstr,RHS4TH3FORTSGSTR)( int*, int*, int*, int*, int*, int*, int*, int*, 
@@ -139,19 +116,19 @@ extern "C"
    void F77_FUNC(dspev,DSPEV)(char & JOBZ, char & UPLO, int & N, double *AP, double *W, double *Z, int & LDZ, double *WORK, int & INFO);
 }
 void rhs4sg_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-	     int nk, int* onesided, float_sw4* a_acof, float_sw4* a_bope, float_sw4* a_ghcof,
-	     float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, 
-	     float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz  );
+	     int nk, int* onesided, const float_sw4* a_acof, const float_sw4* a_bope, const float_sw4* a_ghcof,
+	     float_sw4* a_lu, const float_sw4* a_u, const float_sw4* a_mu, const float_sw4* a_lambda, 
+	     float_sw4 h, const float_sw4* a_strx, const float_sw4* a_stry, const float_sw4* a_strz  );
 
 void rhs4sg( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-	     int nk, int* onesided, float_sw4* a_acof, float_sw4* a_bope, float_sw4* a_ghcof,
-	     float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, 
-	     float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz  );
+	     int nk, int* onesided, const float_sw4* a_acof, const float_sw4* a_bope, const float_sw4* a_ghcof,
+	     float_sw4* a_lu, const float_sw4* a_u, const float_sw4* a_mu, const float_sw4* a_lambda, 
+	     float_sw4 h, const float_sw4* a_strx, const float_sw4* a_stry, const float_sw4* a_strz  );
 
 void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-		     float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_met,
-		     float_sw4* a_jac, float_sw4* a_lu, int* onesided, float_sw4* acof,
-		     float_sw4* bope, float_sw4* ghcof, float_sw4* a_strx, float_sw4* a_stry );
+		     const float_sw4* a_u, const float_sw4* a_mu, const float_sw4* a_lambda, const float_sw4* a_met,
+		     const float_sw4* a_jac, float_sw4* a_lu, const int* onesided, const float_sw4* acof,
+		     const float_sw4* bope, const float_sw4* ghcof, const float_sw4* a_strx, const float_sw4* a_stry );
 
 void rhs4sgcurv( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
 		 float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_met,
@@ -210,6 +187,21 @@ EW::EW( const string& filename ) :
    MPI_Comm_rank( MPI_COMM_WORLD, &m_myrank );
    MPI_Comm_size( MPI_COMM_WORLD, &m_nprocs );
 
+#ifdef CUDA_CODE
+   m_iop = newmanaged(5+5+24+5+384+24+48+6+4);
+   memset(m_iop,0,sizeof(float_sw4)*(5+5+24+5+384+24+48+6+4));
+   m_iop2 = m_iop+5;
+   m_bop2 = m_iop2+5;
+   m_sbop = m_bop2+24;
+   m_acof = m_sbop+5;
+   m_bop = m_acof+384;
+   m_bope = m_bop+24;
+   m_ghcof = m_bope+48;
+   m_hnorm = m_ghcof+6;
+   
+#endif
+
+
    m_restart_check_point = CheckPoint::nil;
    parseInputFile( filename );
    setupRun( );
@@ -221,8 +213,15 @@ EW::EW( const string& filename ) :
        timesteploop( mU, mUm );
    }
     
-}
 
+}
+EW::~EW(){
+#ifdef CUDA_CODE
+  delmanaged(m_iop);
+  m_iop2=m_bop2=m_sbop=m_acof=m_bop=m_bope=m_ghcof=m_hnorm=NULL;
+#endif
+}
+  
 //-----------------------------------------------------------------------
 int EW::computeEndGridPoint( float_sw4 maxval, float_sw4 h )
 {
@@ -973,7 +972,7 @@ void EW::processSource( char* buffer )
 
    //   int ncyc = 0;
    //   bool ncyc_set = false;
-                                     
+
    float_sw4* par=NULL;
    int* ipar=NULL;
    int npar=0, nipar=0;
@@ -2103,15 +2102,15 @@ void EW::allocateArrays()
       mLambda[g].set_to_minusOne();
 
     // Supergrid arrays
-      m_sg_dc_x[g]     = new float_sw4[ilast-ifirst+1];
-      m_sg_dc_y[g]     = new float_sw4[jlast-jfirst+1];
-      m_sg_dc_z[g]     = new float_sw4[klast-kfirst+1];
-      m_sg_str_x[g]    = new float_sw4[ilast-ifirst+1];
-      m_sg_str_y[g]    = new float_sw4[jlast-jfirst+1];
-      m_sg_str_z[g]    = new float_sw4[klast-kfirst+1];
-      m_sg_corner_x[g] = new float_sw4[ilast-ifirst+1];
-      m_sg_corner_y[g] = new float_sw4[jlast-jfirst+1];
-      m_sg_corner_z[g] = new float_sw4[klast-kfirst+1];
+      m_sg_dc_x[g]     = newmanaged(ilast-ifirst+1);
+      m_sg_dc_y[g]     = newmanaged(jlast-jfirst+1);
+      m_sg_dc_z[g]     = newmanaged(klast-kfirst+1);
+      m_sg_str_x[g]    = newmanaged(ilast-ifirst+1);
+      m_sg_str_y[g]    = newmanaged(jlast-jfirst+1);
+      m_sg_str_z[g]    = newmanaged(klast-kfirst+1);
+      m_sg_corner_x[g] = newmanaged(ilast-ifirst+1);
+      m_sg_corner_y[g] = newmanaged(jlast-jfirst+1);
+      m_sg_corner_z[g] = newmanaged(klast-kfirst+1);
       //#pragma omp parallel for
       //      for( int k=kfirst ; k<= klast ; k++)
       //	 for( int j=jfirst ; j <= jlast ; j++ )
@@ -2378,7 +2377,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	 BCForcing[g][side]=NULL;
 	 if (m_bcType[g][side] == bStressFree || m_bcType[g][side] == bDirichlet || m_bcType[g][side] == bSuperGrid)
 	 {
-	    BCForcing[g][side] = new float_sw4[3*m_NumberOfBCPoints[g][side]];
+	   BCForcing[g][side] = newmanaged(3*m_NumberOfBCPoints[g][side]);
 	 }
       }
    }
@@ -2504,6 +2503,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 // Begin time stepping loop
    for( int currentTimeStep = beginCycle; currentTimeStep <= mNumberOfTimeSteps; currentTimeStep++ )
    {    
+     PUSH_RANGE("TIME STEP",0);
       time_measure[0] = MPI_Wtime();
       // Predictor 
       // Need U on device for evalRHS,
@@ -2514,7 +2514,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if( m_cuobj->has_gpu() )
 	 ForceCU( t, dev_F, false, 1 );
       else
-	 Force( t, F, m_point_sources, false );
+	 ForceOffload( t, F, m_point_sources, false );
  // Need F on device for predictor, will make this asynchronous:
       //      for( int g=0; g < mNumberOfGrids ; g++ )
       //	 F[g].copy_to_device(m_cuobj,true,1);
@@ -2532,11 +2532,12 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       time_measure[1] = MPI_Wtime();
 
 // evaluate right hand side
+      PUSH_RANGE("evalRHS",2);
       if( m_cuobj->has_gpu() )
 	 evalRHSCU( U, mMu, mLambda, Lu, 0 ); // save Lu in composite grid 'Lu'
       else
 	 evalRHS( U, mMu, mLambda, Lu ); // save Lu in composite grid 'Lu'
-
+      POP_RANGE;
       if( m_checkfornan )
 #ifdef SW4_CUDA
 	 check_for_nan_GPU( Lu, 1, "Lu pred. " );
@@ -2594,32 +2595,36 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       //	    Up[g].copy_to_device(m_cuobj,true,0);
 
       // Corrector
+      PUSH_RANGE("ForceOffload",3);
       if( m_cuobj->has_gpu() )
 	 ForceCU( t, dev_F, true, 1 );
       else
-	 Force( t, F, m_point_sources, true );
+	ForceOffload( t, F, m_point_sources, true );
+      POP_RANGE;
       //      for( int g=0; g < mNumberOfGrids ; g++ )
       //	 F[g].copy_to_device(m_cuobj,true,1);
 
       //      time_measure[4] = MPI_Wtime();
       time_measure[5] = MPI_Wtime();
 
+      PUSH_RANGE("evalDpDmInTIme",0);
       if( m_cuobj->has_gpu() )
 	 evalDpDmInTimeCU( Up, U, Um, Uacc, 0 ); // store result in Uacc
       else
 	 evalDpDmInTime( Up, U, Um, Uacc ); // store result in Uacc
-
+      POP_RANGE;
       if( m_checkfornan )
 #ifdef SW4_CUDA
 	 check_for_nan_GPU( Uacc, 1, "uacc " );
 #else
 	 check_for_nan( Uacc, 1, "uacc " );
-#endif
+#endif      
+      PUSH_RANGE("evalRHS-2",1);
       if( m_cuobj->has_gpu() )
 	 evalRHSCU( Uacc, mMu, mLambda, Lu, 0 );
       else
        	 evalRHS( Uacc, mMu, mLambda, Lu );
-
+      POP_RANGE;
       if( m_checkfornan )
 #ifdef SW4_CUDA
 	 check_for_nan_GPU( Lu, 1, "L(uacc) " );
@@ -2635,7 +2640,8 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       //      time_measure[5] = MPI_Wtime();
       time_measure[6] = MPI_Wtime();
 
-// add in super-grid damping terms
+      // add in super-grid damping terms
+      PUSH_RANGE("addSuperGridDamping",3);
       if ( m_use_supergrid )
       {
 	 if( m_cuobj->has_gpu() )
@@ -2644,7 +2650,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	    addSuperGridDamping( Up, U, Um, mRho );
 
       }
-
+      POP_RANGE;
       //      if( !(m_cuobj->has_gpu()) )
       //         for( int g=0; g < mNumberOfGrids ; g++ )
       //	    Up[g].copy_from_device(m_cuobj,true,1);
@@ -2747,7 +2753,9 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	 exactSol( t, Up, m_globalUniqueSources ); // store exact solution in Up
 //	 //	 if (m_lamb_test)
 //	 //	    normOfSurfaceDifference( Up, U, errInf, errL2, solInf, solL2, a_Sources);
+	 PUSH_RANGE("NormOfDiff",1);
 	 normOfDifference( Up, U, errInf, errL2, solInf, m_globalUniqueSources );
+	 POP_RANGE;
          if ( m_myrank == 0 )
 	    cout << t << " " << errInf << " " << errL2 << " " << solInf << endl;
       }
@@ -2770,7 +2778,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if( m_save_trace )
 	 for( int s = 0 ; s < 12 ; s++ )
 	    trdata[s+12*(currentTimeStep-beginCycle)]= time_measure[s];
-
+      POP_RANGE;
    } // end time stepping loop
    double time_end_solve = MPI_Wtime();
    print_execution_time( time_start_solve, time_end_solve, "solver phase" );
@@ -2886,6 +2894,15 @@ void EW::setupMPICommunications()
    m_send_type1.resize(2*mNumberOfGrids);
    m_send_type3.resize(2*mNumberOfGrids);
    m_send_type4.resize(2*mNumberOfGrids);
+
+   send_type1.resize(2*mNumberOfGrids);
+   send_type3.resize(2*mNumberOfGrids);
+   send_type4.resize(2*mNumberOfGrids);
+
+   bufs_type1.resize(4*mNumberOfGrids);
+   bufs_type3.resize(4*mNumberOfGrids);
+   bufs_type4.resize(4*mNumberOfGrids);
+
    //   m_send_type21.resize(2*mNumberOfGrids);
    for( int g= 0 ; g < mNumberOfGrids ; g++ )
    {
@@ -2897,12 +2914,40 @@ void EW::setupMPICommunications()
       MPI_Type_vector( nj*nk, m_ppadding, ni, m_mpifloat, &m_send_type1[2*g] );
       MPI_Type_vector( nk, m_ppadding*ni, ni*nj, m_mpifloat, &m_send_type1[2*g+1] );
 
+
+      send_type1[2*g]=std::make_tuple(nj*nk, m_ppadding, ni);
+      send_type1[2*g+1]=std::make_tuple(nk, m_ppadding*ni, ni*nj);
+      
+      bufs_type1[4*g+0]=std::make_tuple(newmanagedh(nj*nk*m_ppadding),newmanagedh(nj*nk*m_ppadding));
+      bufs_type1[4*g+1]=std::make_tuple(newmanagedh(nj*nk*m_ppadding),newmanagedh(nj*nk*m_ppadding));
+      
+      bufs_type1[4*g+2]=std::make_tuple(newmanagedh(nk*m_ppadding*ni),newmanagedh(nk*m_ppadding*ni));
+      bufs_type1[4*g+3]=std::make_tuple(newmanagedh(nk*m_ppadding*ni),newmanagedh(nk*m_ppadding*ni));
       if( m_corder )
       {
 	 MPI_Type_vector( 3*nj*nk, m_ppadding, ni, m_mpifloat, &m_send_type3[2*g] );
 	 MPI_Type_vector( 3*nk, m_ppadding*ni, ni*nj, m_mpifloat, &m_send_type3[2*g+1] );
 	 MPI_Type_vector( 4*nj*nk, m_ppadding, ni, m_mpifloat, &m_send_type4[2*g] );
 	 MPI_Type_vector( 4*nk, m_ppadding*ni, ni*nj, m_mpifloat, &m_send_type4[2*g+1] );
+
+
+	 send_type3[2*g]=std::make_tuple(3*nj*nk, m_ppadding, ni);
+	 send_type3[2*g+1]=std::make_tuple(3*nk, m_ppadding*ni, ni*nj);
+	 send_type4[2*g]=std::make_tuple(4*nj*nk, m_ppadding, ni);
+	 send_type4[2*g+1]=std::make_tuple(4*nk, m_ppadding*ni, ni*nj);
+
+	 bufs_type3[4*g+0]=std::make_tuple(newmanagedh(3*nj*nk*m_ppadding),newmanagedh(3*nj*nk*m_ppadding));
+	 bufs_type3[4*g+1]=std::make_tuple(newmanagedh(3*nj*nk*m_ppadding),newmanagedh(3*nj*nk*m_ppadding));
+
+	 bufs_type3[4*g+2]=std::make_tuple(newmanagedh(3*nk*m_ppadding*ni),newmanagedh(3*nk*m_ppadding*ni));
+	 bufs_type3[4*g+3]=std::make_tuple(newmanagedh(3*nk*m_ppadding*ni),newmanagedh(3*nk*m_ppadding*ni));
+	 
+
+	 bufs_type4[4*g+0]=std::make_tuple(newmanagedh(4*nj*nk*m_ppadding),newmanagedh(4*nj*nk*m_ppadding));
+	 bufs_type4[4*g+1]=std::make_tuple(newmanagedh(4*nj*nk*m_ppadding),newmanagedh(4*nj*nk*m_ppadding));
+
+	 bufs_type4[4*g+2]=std::make_tuple(newmanagedh(4*nk*m_ppadding*ni),newmanagedh(4*nk*m_ppadding*ni));
+	 bufs_type4[4*g+3]=std::make_tuple(newmanagedh(4*nk*m_ppadding*ni),newmanagedh(4*nk*m_ppadding*ni));
       }
       else
       {
@@ -3008,6 +3053,109 @@ void EW::Force(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSource*> poi
      }
   }
 }
+//-----------------------------------------------------------------------
+void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSource*> point_sources,
+	       bool tt )
+{
+  static int firstcall=1;
+  if (firstcall){
+
+    PUSH_RANGE("ForceOffload::FirstCall",3);
+#pragma omp parallel for
+    for( int r=0 ; r<m_identsources.size()-1 ; r++ )
+      {
+	int index=r*3;
+	int s0 = m_identsources[r];
+	int g = point_sources[s0]->m_grid;
+	int i = point_sources[s0]->m_i0;
+	int j = point_sources[s0]->m_j0;
+	int k = point_sources[s0]->m_k0;
+	size_t ind1 = a_F[g].index(1,i,j,k);
+	//     size_t ind2 = a_F[g].index(2,i,j,k);
+	//     size_t ind3 = a_F[g].index(3,i,j,k);
+	size_t oc = a_F[g].m_offc;
+	float_sw4* fptr =a_F[g].c_ptr();
+	ForceAddress[index]=fptr+ind1;
+	ForceAddress[index+1]=fptr+ind1+oc;
+	ForceAddress[index+2]=fptr+ind1+2*oc;
+	//PrintPointerAttributes(fptr+ind1);
+	//PrintPointerAttributes(fptr+ind1+oc);
+	//PrintPointerAttributes(fptr+ind1+2*oc);
+      }
+    POP_RANGE;
+    firstcall=0;
+  } // First call only ends
+  
+  PUSH_RANGE("ForceOffload::set_to_zero",4);
+  for( int g =0 ; g < mNumberOfGrids ; g++ )
+    a_F[g].set_to_zero();
+  POP_RANGE;
+
+  PUSH_RANGE("ForceOffload:;HostCalc",5);
+  //std::cout<<"PA SIZE "<<m_identsources.size()-1<<"\n";
+#pragma omp parallel for
+  for( int r=0 ; r<m_identsources.size()-1 ; r++ )
+    {
+      int index=r*3;
+      int s0 = m_identsources[r];
+      int g = point_sources[s0]->m_grid;
+      int i = point_sources[s0]->m_i0;
+      int j = point_sources[s0]->m_j0;
+      int k = point_sources[s0]->m_k0;
+      size_t ind1 = a_F[g].index(1,i,j,k);
+      //     size_t ind2 = a_F[g].index(2,i,j,k);
+      //     size_t ind3 = a_F[g].index(3,i,j,k);
+      size_t oc = a_F[g].m_offc;
+      float_sw4* fptr =a_F[g].c_ptr();
+      for (int i=0;i<3;i++)
+	ForceVector[index+i]=0.0;
+      for( int s=m_identsources[r]; s< m_identsources[r+1] ; s++ )
+	//  for( int s = 0 ; s < point_sources.size() ; s++ )
+	{
+	  float_sw4 fxyz[3];
+	  if( tt )
+	    point_sources[s]->getFxyztt(a_t,fxyz);
+	  else
+	    point_sources[s]->getFxyz(a_t,fxyz);
+	  for (int i=0;i<3;i++)
+	    ForceVector[index+i]+=fxyz[i];
+	  //fptr[ind1]      += fxyz[0];
+	  //fptr[ind1+oc]   += fxyz[1];
+	  //fptr[ind1+2*oc] += fxyz[2];
+	  //	a_F[g](1,i,j,k) += fxyz[0];
+	  //	a_F[g](2,i,j,k) += fxyz[1];
+	  //	a_F[g](3,i,j,k) += fxyz[2];
+	  //	a_F[g](1,point_sources[s]->m_i0,point_sources[s]->m_j0,point_sources[s]->m_k0) += fxyz[0];
+	  //	a_F[g](2,point_sources[s]->m_i0,point_sources[s]->m_j0,point_sources[s]->m_k0) += fxyz[1];
+	  //	a_F[g](3,point_sources[s]->m_i0,point_sources[s]->m_j0,point_sources[s]->m_k0) += fxyz[2];
+	}
+    }
+  POP_RANGE;
+  //#pragma omp parallel for
+#ifdef CUDA_CODE2
+  for( int r=0 ; r<m_identsources.size()-1 ; r++ ){
+    int index=r*3;
+      //float_sw4* fptr =a_F[g].c_ptr();
+    for(int i=0;i<3;i++){
+      if (!IsManaged(ForceAddress[index+i])) std::cerr<<" NO MANAGED1\n";
+      if (!IsManaged(ForceVector+index+i)) std::cerr<<" NOT MANAGED2\n";
+    }
+  }
+#endif
+  // Need the lines below becuase the object is not in managed memory and the this pointer is host only
+  float_sw4 *ForceVector_copy=ForceVector;
+  float_sw4 **ForceAddress_copy=ForceAddress;
+  PREFETCH(ForceVector);
+  PREFETCH(ForceAddress);
+  forall<EXEC > (0,m_identsources.size()-1,[=] RAJA_DEVICE(int r)
+    {
+      int index=r*3;
+      //float_sw4* fptr =a_F[g].c_ptr();
+      for(int i=0;i<3;i++)
+	*ForceAddress_copy[index+i]+=ForceVector_copy[index+i]; // DOes this need to be an update and not an assignment
+    });
+	  
+}
 
 //---------------------------------------------------------------------------
 void EW::evalPredictor(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
@@ -3016,6 +3164,12 @@ void EW::evalPredictor(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarra
    float_sw4 dt2 = mDt*mDt;
    for( int g=0 ; g<mNumberOfGrids; g++ )
    {
+     a_Up[g].prefetch();
+     a_U[g].prefetch();
+     a_Um[g].prefetch();
+     a_Rho[g].prefetch();
+     a_Lu[g].prefetch();
+     a_F[g].prefetch();
 #ifdef SW4_CROUTINES
       predfort( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g], 
 		a_Up[g].c_ptr(), a_U[g].c_ptr(), a_Um[g].c_ptr(),
@@ -3036,6 +3190,10 @@ void EW::evalCorrector(vector<Sarray> & a_Up, vector<Sarray>& a_Rho,
    float_sw4 dt4 = mDt*mDt*mDt*mDt;  
    for( int g=0 ; g<mNumberOfGrids; g++ )
    {
+     a_Up[g].prefetch();
+     a_Lu[g].prefetch();
+     a_F[g].prefetch();
+     a_Rho[g].prefetch();
 #ifdef SW4_CROUTINES
       corrfort( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g], 
 		a_Up[g].c_ptr(), a_Lu[g].c_ptr(), a_F[g].c_ptr(), a_Rho[g].c_ptr(), dt4 );
@@ -3055,6 +3213,11 @@ void EW::evalDpDmInTime(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarr
    float_sw4 dt2i = 1./(mDt*mDt);
    for(int g=0 ; g<mNumberOfGrids; g++ )
    {
+     //a_Up[g].prefetch();
+     //a_U[g].prefetch();
+     //a_Um[g].prefetch();
+     //a_Uacc[g].prefetch();
+     // Prefetched version is slower. Needs visitiing after Ray is upgraded.
 #ifdef SW4_CROUTINES
       dpdmtfort( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g],
 		 a_Up[g].c_ptr(), a_U[g].c_ptr(), a_Um[g].c_ptr(), a_Uacc[g].c_ptr(), dt2i );
@@ -3065,14 +3228,69 @@ void EW::evalDpDmInTime(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarr
 				    a_Uacc[g].c_ptr(), &dt2i );
 #endif
    }
+   SYNC_DEVICE;
 }
 
 //-----------------------------------------------------------------------
 void EW::evalRHS(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
 		 vector<Sarray> & a_Uacc )
 {
+  PUSH_RANGE("evalRHS",3);
    for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
    {
+     a_U[g].prefetch();
+     a_Mu[g].prefetch();
+     a_Lambda[g].prefetch();
+     a_Uacc[g].prefetch();
+     PREFETCH(m_sg_str_x[g]);
+     PREFETCH(m_sg_str_y[g]);
+     PREFETCH(m_sg_str_z[g]);
+     PREFETCH(m_iop);
+#ifdef DUMP_ARRAYS
+     std::cout<<"WARNING DUMPIING ARRAYS IN EW.C line 3251 \n";
+     int myRank;
+     MPI_Comm_rank(MPI_COMM_WORLD, &myRank);
+     static int firstcall=1;
+     if ((myRank==0) && (firstcall)) {
+       ofstream off("Dump.txt");
+       off<<m_iStart[g]<<"\n";
+       off<<m_iEnd[g]<<"\n";
+       off<<m_jStart[g]<<"\n";
+       off<<m_jEnd[g]<<"\n";
+       off<<m_kStart[g]<<"\n";
+       off<<m_kEnd[g]<<"\n";
+       off<<m_global_nz[g]<<"\n";
+       
+       off<<6*sizeof(int)<<"\n";
+       off<<5*sizeof(double)<<"\n";
+       off<<24*sizeof(double)<<"\n";
+       off<<48*sizeof(double)<<"\n";
+       off<<mGridSize[g]<<"\n";
+       off<<a_Uacc[g].memsize((void*)a_Uacc[g].c_ptr())<<"\n";
+       off<<a_U[g].memsize((void*)a_U[g].c_ptr())<<"\n";
+       off<<a_Mu[g].memsize((void*)a_Mu[g].c_ptr())<<"\n";
+       off<<a_Lambda[g].memsize((void*)a_Lambda[g].c_ptr())<<"\n";
+       off<<map[m_sg_str_x[g]]<<"\n";
+       off<<map[m_sg_str_y[g]]<<"\n";
+       off<<map[m_sg_str_z[g]]<<"\n";
+
+       off.close();
+       ofstream offb("Dump.bin",ios::out|ios::binary);
+       offb.write((char*)m_onesided[g],6*sizeof(int));
+       offb.write((char*)m_acof,5*sizeof(double));
+       offb.write((char*)m_bope,24*sizeof(double));
+       offb.write((char*)m_ghcof,48*sizeof(double));
+       offb.write((char*)a_Uacc[g].c_ptr(),a_Uacc[g].memsize((void*)a_Uacc[g].c_ptr()));
+       offb.write((char*)a_U[g].c_ptr(),a_U[g].memsize((void*)a_U[g].c_ptr()));
+       offb.write((char*)a_Mu[g].c_ptr(),a_Mu[g].memsize((void*)a_Mu[g].c_ptr()));
+       offb.write((char*)a_Lambda[g].c_ptr(),a_Lambda[g].memsize((void*)a_Lambda[g].c_ptr()));
+       offb.write((char*)m_sg_str_x[g],map[m_sg_str_x[g]]);
+       offb.write((char*)m_sg_str_y[g],map[m_sg_str_y[g]]);
+       offb.write((char*)m_sg_str_z[g],map[m_sg_str_z[g]]);
+       offb.close();
+	 }
+     firstcall=0;
+#endif
 #ifdef SW4_CROUTINES
       if( m_corder )
 	 rhs4sg_rev( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], 
@@ -3108,6 +3326,8 @@ void EW::evalRHS(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_L
    if( m_topography_exists )
    {
       int g=mNumberOfGrids-1;
+      mMetric.prefetch();
+      mJ.prefetch();
       char op = '=';    // Assign Uacc := L(u)
 #ifdef SW4_CROUTINES
       if( m_corder )
@@ -3128,11 +3348,21 @@ void EW::evalRHS(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_L
 					      &op );
 #endif
    }
+   POP_RANGE;
 }
-
-//-----------------------------------------------------------------------
 void EW::communicate_array( Sarray& u, int grid )
 {
+  //std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  communicate_array_async(u,grid);
+  //communicate_array_org(u,grid);
+  // Use _async for the faster CUDA version
+  //std::this_thread::sleep_for(std::chrono::milliseconds(100));
+}
+//-----------------------------------------------------------------------
+void EW::communicate_array_org( Sarray& u, int grid )
+{
+  PUSH_RANGE("COMM_ARRAY",4);
+  //u.prefetch(cudaCpuDeviceId);
    REQUIRE2( u.m_nc == 1 || u.m_nc == 3 || u.m_nc == 4,
 	     "Communicate array, only implemented for nc=1,3, and 4 "
 	     << " nc = " << u.m_nc );
@@ -3144,6 +3374,8 @@ void EW::communicate_array( Sarray& u, int grid )
       int xtag2 = 346;
       int ytag1 = 347;
       int ytag2 = 348;
+      //for (int i=0;i<4;i++)std::cout<<m_neighbor[i]<<" ";
+      //std::cout<<"\n";
       // X-direction communication
       MPI_Sendrecv( &u(ie-(2*m_ppadding-1),jb,kb), 1, m_send_type1[2*grid], m_neighbor[1], xtag1,
 		    &u(ib,jb,kb), 1, m_send_type1[2*grid], m_neighbor[0], xtag1,
@@ -3201,6 +3433,234 @@ void EW::communicate_array( Sarray& u, int grid )
 		    &u(1,ib,je-(m_ppadding-1),kb), 1, m_send_type4[2*grid+1], m_neighbor[3], ytag2,
 		    m_cartesian_communicator, &status );
    }
+   u.prefetch();
+   POP_RANGE;
+}
+
+void EW::communicate_array_async(Sarray& u, int grid )
+{
+  PUSH_RANGE("COMM_ARRAY",4);
+  //u.prefetch(cudaCpuDeviceId);
+   REQUIRE2( u.m_nc == 1 || u.m_nc == 3 || u.m_nc == 4,
+	     "Communicate array, only implemented for nc=1,3, and 4 "
+	     << " nc = " << u.m_nc );
+   int ie = u.m_ie, ib=u.m_ib, je=u.m_je, jb=u.m_jb, kb=u.m_kb;//,ke=u.m_ke;
+   MPI_Status status;
+#ifdef THREADED_MPI
+   const int threaded_mpi=1;
+#else
+     const int threaded_mpi=0;
+#endif
+   if( u.m_nc == 1 )
+   {
+      int xtag1 = 345;
+      int xtag2 = 346;
+      int ytag1 = 347;
+      int ytag2 = 348;
+      // X-direction communication
+      //for (int i=0;i<4;i++)std::cout<<m_neighbor[i]<<" ";
+      //std::cout<<"\n";
+#pragma omp parallel default(shared) if (threaded_mpi)
+#pragma omp sections 
+      {
+#pragma omp section
+      AMPI_Sendrecv( &u(ie-(2*m_ppadding-1),jb,kb), 1, send_type1[2*grid], m_neighbor[1], xtag1,
+		    &u(ib,jb,kb), 1, send_type1[2*grid], m_neighbor[0], xtag1,
+		     bufs_type1[4*grid],
+		    m_cartesian_communicator, &status );
+#pragma omp section
+      AMPI_Sendrecv( &u(ib+m_ppadding,jb,kb), 1, send_type1[2*grid], m_neighbor[0], xtag2,
+		    &u(ie-(m_ppadding-1),jb,kb), 1, send_type1[2*grid], m_neighbor[1], xtag2,
+		     bufs_type1[4*grid+1],
+		    m_cartesian_communicator, &status );
+      // Y-direction communication
+#pragma omp section
+      AMPI_Sendrecv( &u(ib,je-(2*m_ppadding-1),kb), 1, send_type1[2*grid+1], m_neighbor[3], ytag1,
+		     &u(ib,jb,kb), 1, send_type1[2*grid+1], m_neighbor[2], ytag1,
+		     bufs_type1[4*grid+2],
+		    m_cartesian_communicator, &status );    
+#pragma omp section  
+      AMPI_Sendrecv( &u(ib,jb+m_ppadding,kb), 1, send_type1[2*grid+1], m_neighbor[2], ytag2,
+		    &u(ib,je-(m_ppadding-1),kb), 1, send_type1[2*grid+1], m_neighbor[3], ytag2,
+		     bufs_type1[4*grid+3],
+		    m_cartesian_communicator, &status );
+   }
+   }
+   else if( u.m_nc == 3 )
+   {
+
+      int xtag1 = 345;
+      int xtag2 = 346;
+      int ytag1 = 347;
+      int ytag2 = 348;
+#pragma omp parallel default(shared) if (threaded_mpi)
+#pragma omp sections 
+      {
+      // X-direction communication
+#pragma omp section  
+      AMPI_Sendrecv( &u(1,ie-(2*m_ppadding-1),jb,kb), 1, send_type3[2*grid], m_neighbor[1], xtag1,
+		    &u(1,ib,jb,kb), 1, send_type3[2*grid], m_neighbor[0], xtag1,
+		     bufs_type3[4*grid],
+		    m_cartesian_communicator, &status );
+#pragma omp section  
+      AMPI_Sendrecv( &u(1,ib+m_ppadding,jb,kb), 1, send_type3[2*grid], m_neighbor[0], xtag2,
+		    &u(1,ie-(m_ppadding-1),jb,kb), 1, send_type3[2*grid], m_neighbor[1], xtag2,
+		    bufs_type3[4*grid+1],
+		    m_cartesian_communicator, &status );
+      // Y-direction communication
+#pragma omp section  
+      AMPI_Sendrecv( &u(1,ib,je-(2*m_ppadding-1),kb), 1, send_type3[2*grid+1], m_neighbor[3], ytag1,
+		    &u(1,ib,jb,kb), 1, send_type3[2*grid+1], m_neighbor[2], ytag1,
+		    bufs_type3[4*grid+2],
+		    m_cartesian_communicator, &status );
+#pragma omp section  
+      AMPI_Sendrecv( &u(1,ib,jb+m_ppadding,kb), 1, send_type3[2*grid+1], m_neighbor[2], ytag2,
+		    &u(1,ib,je-(m_ppadding-1),kb), 1, send_type3[2*grid+1], m_neighbor[3], ytag2,
+		    bufs_type3[4*grid+3],
+		    m_cartesian_communicator, &status );
+      }
+   }
+   else if( u.m_nc == 4 )
+   {
+      int xtag1 = 345;
+      int xtag2 = 346;
+      int ytag1 = 347;
+      int ytag2 = 348;
+#pragma omp parallel default(shared) if (threaded_mpi)
+#pragma omp sections 
+      {
+      // X-direction communication
+#pragma omp section  
+      AMPI_Sendrecv( &u(1,ie-(2*m_ppadding-1),jb,kb), 1, send_type4[2*grid], m_neighbor[1], xtag1,
+		    &u(1,ib,jb,kb), 1, send_type4[2*grid], m_neighbor[0], xtag1,
+		    bufs_type4[4*grid],
+		    m_cartesian_communicator, &status );
+#pragma omp section  
+      AMPI_Sendrecv( &u(1,ib+m_ppadding,jb,kb), 1, send_type4[2*grid], m_neighbor[0], xtag2,
+		    &u(1,ie-(m_ppadding-1),jb,kb), 1, send_type4[2*grid], m_neighbor[1], xtag2,
+		    bufs_type4[4*grid+1],
+		    m_cartesian_communicator, &status );
+#pragma omp section  
+      // Y-direction communication
+      AMPI_Sendrecv( &u(1,ib,je-(2*m_ppadding-1),kb), 1, send_type4[2*grid+1], m_neighbor[3], ytag1,
+		    &u(1,ib,jb,kb), 1, send_type4[2*grid+1], m_neighbor[2], ytag1,
+		    bufs_type4[4*grid+2],
+		    m_cartesian_communicator, &status );
+#pragma omp section  
+      AMPI_Sendrecv( &u(1,ib,jb+m_ppadding,kb), 1, send_type4[2*grid+1], m_neighbor[2], ytag2,
+		    &u(1,ib,je-(m_ppadding-1),kb), 1, send_type4[2*grid+1], m_neighbor[3], ytag2,
+		    bufs_type4[4*grid+3],
+		    m_cartesian_communicator, &status );
+      }
+   }
+   //u.prefetch();
+   POP_RANGE;
+}
+
+
+void EW::communicate_array_new( Sarray& u, int grid )
+{
+  // The orignal communication patterns allows corner values to propagate twice during the
+  // communcation. So 2nd send_recv picks put info received during the previous send_recv.
+  // In this version this does not happen and it changes the results. The original way
+  // can be diplicated by calling this twice, for example.
+  // DO NOT USE FOR THE TIME BEING 
+  
+  PUSH_RANGE("COMM_ARRAY_SPLIT",4);
+  //u.prefetch(cudaCpuDeviceId);
+   REQUIRE2( u.m_nc == 1 || u.m_nc == 3 || u.m_nc == 4,
+	     "Communicate array, only implemented for nc=1,3, and 4 "
+	     << " nc = " << u.m_nc );
+   int ie = u.m_ie, ib=u.m_ib, je=u.m_je, jb=u.m_jb, kb=u.m_kb;//,ke=u.m_ke;
+   MPI_Status status;
+   std::vector<AMPI_Ret_type> list;
+   if( u.m_nc == 1 )
+   {
+      int xtag1 = 345;
+      int xtag2 = 346;
+      int ytag1 = 347;
+      int ytag2 = 348;
+       
+      // X-direction communication
+      //for (int i=0;i<4;i++)std::cout<<m_neighbor[i]<<" ";
+      //std::cout<<"\n";
+      list.push_back(AMPI_SendrecvSplit( &u(ie-(2*m_ppadding-1),jb,kb), 1, send_type1[2*grid], m_neighbor[1], xtag1,
+       &u(ib,jb,kb), 1, send_type1[2*grid], m_neighbor[0], xtag1,
+       bufs_type1[4*grid],
+       m_cartesian_communicator, &status ));
+      list.push_back(AMPI_SendrecvSplit( &u(ib+m_ppadding,jb,kb), 1, send_type1[2*grid], m_neighbor[0], xtag2,
+       &u(ie-(m_ppadding-1),jb,kb), 1, send_type1[2*grid], m_neighbor[1], xtag2,
+       bufs_type1[4*grid+1],
+       m_cartesian_communicator, &status ));
+      // Y-direction communication
+      list.push_back(AMPI_SendrecvSplit( &u(ib,je-(2*m_ppadding-1),kb), 1, send_type1[2*grid+1], m_neighbor[3], ytag1,
+       &u(ib,jb,kb), 1, send_type1[2*grid+1], m_neighbor[2], ytag1,
+       bufs_type1[4*grid+2],
+       m_cartesian_communicator, &status ));    
+      list.push_back(AMPI_SendrecvSplit( &u(ib,jb+m_ppadding,kb), 1, send_type1[2*grid+1], m_neighbor[2], ytag2,
+       &u(ib,je-(m_ppadding-1),kb), 1, send_type1[2*grid+1], m_neighbor[3], ytag2,
+       bufs_type1[4*grid+3],
+       m_cartesian_communicator, &status ));
+      AMPI_SendrecvSync(list);
+   }
+   else if( u.m_nc == 3 )
+   {
+
+      int xtag1 = 345;
+      int xtag2 = 346;
+      int ytag1 = 347;
+      int ytag2 = 348;
+      
+      // X-direction communication
+      list.push_back(AMPI_SendrecvSplit( &u(1,ie-(2*m_ppadding-1),jb,kb), 1, send_type3[2*grid], m_neighbor[1], xtag1,
+      		    &u(1,ib,jb,kb), 1, send_type3[2*grid], m_neighbor[0], xtag1,
+      		     bufs_type3[4*grid],
+      		    m_cartesian_communicator, &status ));
+      list.push_back(AMPI_SendrecvSplit( &u(1,ib+m_ppadding,jb,kb), 1, send_type3[2*grid], m_neighbor[0], xtag2,
+      		    &u(1,ie-(m_ppadding-1),jb,kb), 1, send_type3[2*grid], m_neighbor[1], xtag2,
+      		    bufs_type3[4*grid+1],
+      		    m_cartesian_communicator, &status ));
+      // Y-direction communication
+      list.push_back(AMPI_SendrecvSplit( &u(1,ib,je-(2*m_ppadding-1),kb), 1, send_type3[2*grid+1], m_neighbor[3], ytag1,
+		    &u(1,ib,jb,kb), 1, send_type3[2*grid+1], m_neighbor[2], ytag1,
+		    bufs_type3[4*grid+2],
+		    m_cartesian_communicator, &status ));
+      list.push_back(AMPI_SendrecvSplit( &u(1,ib,jb+m_ppadding,kb), 1, send_type3[2*grid+1], m_neighbor[2], ytag2,
+		    &u(1,ib,je-(m_ppadding-1),kb), 1, send_type3[2*grid+1], m_neighbor[3], ytag2,
+		    bufs_type3[4*grid+3],
+		    m_cartesian_communicator, &status ));
+      AMPI_SendrecvSync(list);
+      //buffdiff(std::get<1>(bufs_typed[4*grid]),std::get<1>(bufs_type3[4*grid]),send_type3[2*grid]);
+   }
+   else if( u.m_nc == 4 )
+   {
+      int xtag1 = 345;
+      int xtag2 = 346;
+      int ytag1 = 347;
+      int ytag2 = 348;
+
+      // X-direction communication
+      list.push_back(AMPI_SendrecvSplit( &u(1,ie-(2*m_ppadding-1),jb,kb), 1, send_type4[2*grid], m_neighbor[1], xtag1,
+		    &u(1,ib,jb,kb), 1, send_type4[2*grid], m_neighbor[0], xtag1,
+		    bufs_type4[4*grid],
+		    m_cartesian_communicator, &status ));
+      list.push_back(AMPI_SendrecvSplit( &u(1,ib+m_ppadding,jb,kb), 1, send_type4[2*grid], m_neighbor[0], xtag2,
+		    &u(1,ie-(m_ppadding-1),jb,kb), 1, send_type4[2*grid], m_neighbor[1], xtag2,
+		    bufs_type4[4*grid+1],
+		    m_cartesian_communicator, &status ));
+      // Y-direction communication
+      list.push_back(AMPI_SendrecvSplit( &u(1,ib,je-(2*m_ppadding-1),kb), 1, send_type4[2*grid+1], m_neighbor[3], ytag1,
+		    &u(1,ib,jb,kb), 1, send_type4[2*grid+1], m_neighbor[2], ytag1,
+		    bufs_type4[4*grid+2],
+		    m_cartesian_communicator, &status ));
+      list.push_back(AMPI_SendrecvSplit( &u(1,ib,jb+m_ppadding,kb), 1, send_type4[2*grid+1], m_neighbor[2], ytag2,
+		    &u(1,ib,je-(m_ppadding-1),kb), 1, send_type4[2*grid+1], m_neighbor[3], ytag2,
+		    bufs_type4[4*grid+3],
+		    m_cartesian_communicator, &status ));
+      AMPI_SendrecvSync(list);
+   }
+   //u.prefetch();
+   POP_RANGE;
 }
 
 //-----------------------------------------------------------------------
@@ -3212,22 +3672,28 @@ void EW::cartesian_bc_forcing( float_sw4 t, vector<float_sw4**> & a_BCForcing,
    {
       if( m_point_source_test )
       {
-	 for( int side=0 ; side < 6 ; side++ )
+	
+	for( int side=0 ; side < 6 ; side++ ){
+	  float_sw4 *tmp=a_BCForcing[g][side];
 	    if( m_bcType[g][side] == bDirichlet )
-	       get_exact_point_source( a_BCForcing[g][side], t, g, *a_sources[0], &m_BndryWindow[g][6*side] );
+	       get_exact_point_source2( a_BCForcing[g][side], t, g, *a_sources[0], &m_BndryWindow[g][6*side] );
 	    else
-	       for (int q=0; q<3*m_NumberOfBCPoints[g][side]; q++)
-		  a_BCForcing[g][side][q] = 0;
+	      forall<EXEC> (0,3*m_NumberOfBCPoints[g][side],[=] RAJA_DEVICE(int q){
+		  tmp[q] = 0;});
+	}
       }
       else
       {
 	 // no boundary forcing
 	 // we can do the same loop for all types of bc. For bParallel boundaries, numberOfBCPoints=0
-	 for( int side=0 ; side < 6 ; side++ )
-	    for( int q=0 ; q < 3*m_NumberOfBCPoints[g][side] ; q++ )
-	       a_BCForcing[g][side][q] = 0.;
+	for( int side=0 ; side < 6 ; side++ ){
+	  float_sw4 *tmp=a_BCForcing[g][side];
+	  forall<EXEC> (0,3*m_NumberOfBCPoints[g][side],[=] RAJA_DEVICE(int q){
+		  tmp[q] = 0;});
+	}
       }
    }
+   SYNC_DEVICE
 }
 
 //-----------------------------------------------------------------------
@@ -3336,6 +3802,15 @@ void EW::enforceBC( vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& 
    float_sw4 om=0, ph=0, cv=0;
    for(int g=0 ; g<mNumberOfGrids; g++ )
    {
+     PUSH_RANGE("enforceBC::PREFETCH",1);
+     a_U[g].prefetch();
+     a_Mu[g].prefetch();
+     a_Lambda[g].prefetch();
+     PREFETCH(m_sg_str_x[g]);
+     PREFETCH(m_sg_str_y[g]);
+     for(int j=0;j<6;j++)
+       PREFETCH(a_BCForcing[g][j]);
+     POP_RANGE;
       //      int topo=topographyExists() && g == mNumberOfGrids-1;
 #ifdef SW4_CROUTINES
       if( m_corder )
@@ -3423,6 +3898,23 @@ void EW::addSuperGridDamping(vector<Sarray> & a_Up, vector<Sarray> & a_U,
 {
    for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
    {
+     a_Up[g].prefetch();
+     a_U[g].prefetch();
+     a_Um[g].prefetch();
+     a_Rho[g].prefetch();
+
+     PREFETCH(m_sg_dc_x[g]);
+     PREFETCH(m_sg_dc_y[g]);
+     PREFETCH(m_sg_dc_z[g]);
+
+     PREFETCH(m_sg_str_x[g]);
+     PREFETCH(m_sg_str_y[g]);
+     PREFETCH(m_sg_str_z[g]);
+
+     PREFETCH(m_sg_corner_x[g]);
+     PREFETCH(m_sg_corner_y[g]);
+     PREFETCH(m_sg_corner_z[g]);
+
       if( m_sg_damping_order == 4 )
       {
 #ifdef SW4_CROUTINES	 
@@ -3448,6 +3940,7 @@ void EW::addSuperGridDamping(vector<Sarray> & a_Up, vector<Sarray> & a_U,
       }
       else if(  m_sg_damping_order == 6 )
       {
+	std::cout<<" addsgd6fort_indrev needs offloading\n";
 #ifdef SW4_CROUTINES	 
 	 if( m_corder )
 	    addsgd6fort_indrev( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g],
@@ -3542,11 +4035,11 @@ bool EW::exactSol( float_sw4 a_t, vector<Sarray> & a_U, vector<Source*>& sources
      for( int g=0 ; g < mNumberOfGrids; g++ ) 
      {
 	size_t npts = static_cast<size_t>(m_iEnd[g]-m_iStart[g]+1)*(m_jEnd[g]-m_jStart[g]+1)*(m_kEnd[g]-m_kStart[g]+1);
-	float_sw4* utmp = new float_sw4[npts*3];
+	float_sw4* utmp = newmanaged(npts*3);
 	   //	get_exact_point_source( a_U[g].c_ptr(), a_t, g, *sources[0] );
-	get_exact_point_source( utmp, a_t, g, *sources[0] );
+	get_exact_point_source2( utmp, a_t, g, *sources[0] );
 	a_U[g].assign( utmp, 0 );
-	delete[] utmp;
+	delmanaged(utmp);
      }
      retval = true;
   }
@@ -3555,7 +4048,7 @@ bool EW::exactSol( float_sw4 a_t, vector<Sarray> & a_U, vector<Source*>& sources
 
 //-----------------------------------------------------------------------
 // smooth wave for time dependence to test point force term with 
-float_sw4 EW::SmoothWave(float_sw4 t, float_sw4 R, float_sw4 c)
+RAJA_HOST_DEVICE float_sw4 EW::SmoothWave(float_sw4 t, float_sw4 R, float_sw4 c)
 {
   float_sw4 temp = R;
   float_sw4 c0 = 2187./8., c1 = -10935./8., c2 = 19683./8., c3 = -15309./8., c4 = 2187./4.;
@@ -3570,7 +4063,7 @@ float_sw4 EW::SmoothWave(float_sw4 t, float_sw4 R, float_sw4 c)
 
 //-----------------------------------------------------------------------
 // very smooth bump for time dependence for further testing of point force 
-float_sw4 EW::VerySmoothBump(float_sw4 t, float_sw4 R, float_sw4 c)
+RAJA_HOST_DEVICE float_sw4 EW::VerySmoothBump(float_sw4 t, float_sw4 R, float_sw4 c)
 {
   float_sw4 temp = R;
   float_sw4 c0 = 1024, c1 = -5120, c2 = 10240, c3 = -10240, c4 = 5120, c5 = -1024;
@@ -3585,7 +4078,7 @@ float_sw4 EW::VerySmoothBump(float_sw4 t, float_sw4 R, float_sw4 c)
 
 //-----------------------------------------------------------------------
 // C6 smooth bump for time dependence for further testing of point force 
-float_sw4 EW::C6SmoothBump(float_sw4 t, float_sw4 R, float_sw4 c)
+RAJA_HOST_DEVICE float_sw4 EW::C6SmoothBump(float_sw4 t, float_sw4 R, float_sw4 c)
 {
   float_sw4 retval = 0;
   if( (t-R/c) > 0 && (t-R/c) < 1 )
@@ -3595,7 +4088,7 @@ float_sw4 EW::C6SmoothBump(float_sw4 t, float_sw4 R, float_sw4 c)
 
 //-----------------------------------------------------------------------
 // derivative of smooth wave 
-float_sw4 EW::d_SmoothWave_dt(float_sw4 t, float_sw4 R, float_sw4 c)
+RAJA_HOST_DEVICE float_sw4 EW::d_SmoothWave_dt(float_sw4 t, float_sw4 R, float_sw4 c)
 {
   float_sw4 temp = R;
   float_sw4 c0 = 2187./8., c1 = -10935./8., c2 = 19683./8., c3 = -15309./8., c4 = 2187./4.;
@@ -3610,7 +4103,7 @@ float_sw4 EW::d_SmoothWave_dt(float_sw4 t, float_sw4 R, float_sw4 c)
 
 //-----------------------------------------------------------------------
 // very smooth bump for time dependence to further testing of point force 
-float_sw4 EW::d_VerySmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c)
+RAJA_HOST_DEVICE float_sw4 EW::d_VerySmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c)
 {
   float_sw4 temp = R;
   float_sw4 c0 = 1024, c1 = -5120, c2 = 10240, c3 = -10240, c4 = 5120, c5 = -1024;
@@ -3625,7 +4118,7 @@ float_sw4 EW::d_VerySmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c)
 
 //-----------------------------------------------------------------------
 // C6 smooth bump for time dependence to further testing of point force 
-float_sw4 EW::d_C6SmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c)
+RAJA_HOST_DEVICE float_sw4 EW::d_C6SmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c)
 {
   float_sw4 retval=0;
   if( (t-R/c) > 0 && (t-R/c) < 1 )
@@ -3635,7 +4128,7 @@ float_sw4 EW::d_C6SmoothBump_dt(float_sw4 t, float_sw4 R, float_sw4 c)
 
 //-----------------------------------------------------------------------
 // Primitive function (for T) of SmoothWave(t-T)*T
-float_sw4 EW::SWTP(float_sw4 Lim, float_sw4 t)
+RAJA_HOST_DEVICE float_sw4 EW::SWTP(float_sw4 Lim, float_sw4 t)
 {
   float_sw4 temp = Lim;
 
@@ -3653,7 +4146,7 @@ float_sw4 EW::SWTP(float_sw4 Lim, float_sw4 t)
 
 //-----------------------------------------------------------------------
 // Primitive function (for T) of VerySmoothBump(t-T)*T
-float_sw4 EW::VSBTP(float_sw4 Lim, float_sw4 t)
+RAJA_HOST_DEVICE float_sw4 EW::VSBTP(float_sw4 Lim, float_sw4 t)
 {
   float_sw4 temp = Lim;
   float_sw4 f = 1024., g = -5120., h = 10240., i = -10240., j = 5120., k = -1024.;
@@ -3667,7 +4160,7 @@ float_sw4 EW::VSBTP(float_sw4 Lim, float_sw4 t)
 }
 //-----------------------------------------------------------------------
 // Primitive function (for T) of C6SmoothBump(t-T)*T
-float_sw4 EW::C6SBTP(float_sw4 Lim, float_sw4 t)
+RAJA_HOST_DEVICE float_sw4 EW::C6SBTP(float_sw4 Lim, float_sw4 t)
 {
   float_sw4 x = t-Lim;
   return pow(x,8)*(-3217.5*pow(x,8)+3432.0*(7+t)*pow(x,7)-25740.0*(3+t)*pow(x,6)
@@ -3677,7 +4170,7 @@ float_sw4 EW::C6SBTP(float_sw4 Lim, float_sw4 t)
 
 //-----------------------------------------------------------------------
 // Integral of H(t-T)*H(1-t+T)*SmoothWave(t-T)*T from R/alpha to R/beta
-float_sw4 EW::SmoothWave_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta)
+RAJA_HOST_DEVICE float_sw4 EW::SmoothWave_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta)
 {
   float_sw4 temp = R;
 
@@ -3704,7 +4197,7 @@ float_sw4 EW::SmoothWave_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha,
 
 //-----------------------------------------------------------------------
 // Integral of H(t-T)*H(1-t+T)*VerySmoothBump(t-T)*T from R/alpha to R/beta
-float_sw4 EW::VerySmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta)
+RAJA_HOST_DEVICE float_sw4 EW::VerySmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta)
 {
   float_sw4 temp = R;
 
@@ -3730,7 +4223,7 @@ float_sw4 EW::VerySmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 al
 
 //-----------------------------------------------------------------------
 // Integral of H(t-T)*H(1-t+T)*C6SmoothBump(t-T)*T from R/alpha to R/beta
-float_sw4 EW::C6SmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta)
+RAJA_HOST_DEVICE float_sw4 EW::C6SmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alpha, float_sw4 beta)
 {
   float_sw4 temp = R;
 
@@ -3755,7 +4248,7 @@ float_sw4 EW::C6SmoothBump_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 alph
 }
 
 //-----------------------------------------------------------------------
-float_sw4 EW::Gaussian(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f )
+RAJA_HOST_DEVICE float_sw4 EW::Gaussian(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f )
 {
   float_sw4 temp = R;
   temp = 1 /(f* sqrt(2*M_PI))*exp(-pow(t-R/c,2) / (2*f*f));
@@ -3763,7 +4256,7 @@ float_sw4 EW::Gaussian(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f )
 }
 
 //-----------------------------------------------------------------------
-float_sw4 EW::d_Gaussian_dt(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f)
+RAJA_HOST_DEVICE float_sw4 EW::d_Gaussian_dt(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f)
 {
   float_sw4 temp = R;
   temp = 1 /(f* sqrt(2*M_PI))*(-exp(-pow(t-R/c,2)/(2*f*f))*(t-R/c))/pow(f,2);
@@ -3771,7 +4264,7 @@ float_sw4 EW::d_Gaussian_dt(float_sw4 t, float_sw4 R, float_sw4 c, float_sw4 f)
 }
 
 //-----------------------------------------------------------------------
-float_sw4 EW::Gaussian_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 f, float_sw4 alpha, float_sw4 beta)
+RAJA_HOST_DEVICE float_sw4 EW::Gaussian_x_T_Integral(float_sw4 t, float_sw4 R, float_sw4 f, float_sw4 alpha, float_sw4 beta)
 {
   float_sw4 temp = R;
   temp = -0.5*t*(erf( (t-R/beta)/(sqrt(2.0)*f))     - erf( (t-R/alpha)/(sqrt(2.0)*f)) ) -
@@ -3869,11 +4362,19 @@ void EW::get_exact_point_source( float_sw4* up, float_sw4 t, int g, Source& sour
    //   for( int k=m_kStart[g] ; k <= m_kEnd[g] ; k++ )
    //      for( int j=m_jStart[g] ; j <= m_jEnd[g] ; j++ )
    //	 for( int i=m_iStart[g] ; i <= m_iEnd[g] ; i++ )
-   for( int k=kmin ; k <= kmax ; k++ )
-      for( int j=jmin ; j <= jmax ; j++ )
-	 for( int i=imin ; i <= imax ; i++ )
-	 {
+   //   for( int k=kmin ; k <= kmax ; k++ )
+   //   for( int j=jmin ; j <= jmax ; j++ )
+   //	 for( int i=imin ; i <= imax ; i++ )
+   int m_zmin_local= m_zmin[g];
+   //PrintPointerAttributes(up);
+   forallN<EXEC_CARTBC, int, int,int>(
+				  RangeSegment(kmin,kmax+1),
+				  RangeSegment(jmin,jmax+1),
+				  RangeSegment(imin,imax+1),
+				  [=] RAJA_DEVICE(int k, int j, int i) {
+	 
             float_sw4 x,y,z;
+	    size_t ind = (i-imin)+(j-jmin)*(imax-imin+1)+(k-kmin)*(jmax-jmin+1)*(imax-imin+1);
 	    //	    if( curvilinear )
 	    //	    {
 	    //               x = mX(i,j,k);
@@ -3884,7 +4385,7 @@ void EW::get_exact_point_source( float_sw4* up, float_sw4 t, int g, Source& sour
 	    {
 	       x = (i-1)*h;
 	       y = (j-1)*h;
-	       z = (k-1)*h + m_zmin[g];
+	       z = (k-1)*h + m_zmin_local;
 	    }
 	    if( !ismomentsource )
 	    {
@@ -4403,10 +4904,14 @@ void EW::get_exact_point_source( float_sw4* up, float_sw4 t, int g, Source& sour
 
 		      + ( 15*(z-z0)*(z-z0)*(y-y0) / pow(R,7) - 3*(y-y0) / pow(R,5) ) * C
 		      );
+		  //printf("VALUE = %lf \n",up[3*ind+2]);
 	       }
 	    }
-	    ind++;
-	 }
+	    //ind++;
+				  });
+#ifdef CUDA_CODE
+   cudaDeviceSynchronize();
+#endif
 }
 
 //-----------------------------------------------------------------------
@@ -6308,6 +6813,16 @@ void EW::sort_grid_point_sources()
    // Test   
    int nrsrc =m_point_sources.size();
    int nrunique = m_identsources.size()-1;
+
+#ifdef CUDA_CODE
+   ForceVector = newmanaged(nrunique*3);
+   cudaMallocManaged(&ForceAddress, 3*nrunique*sizeof(float_sw4*));
+   map[ForceAddress]= 3*nrunique*sizeof(float_sw4*);
+   cudaDeviceSynchronize();
+#else
+   ForceVector = new double[nrunique*3];
+   ForceAddress= new float_sw4*[nrunique*3];
+#endif
    int nrsrctot, nruniquetot;
    MPI_Reduce( &nrsrc, &nrsrctot, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD );
    MPI_Reduce( &nrunique, &nruniquetot, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD );
@@ -6360,7 +6875,937 @@ void EW::copy_point_sources_to_gpu()
 	 cudaGetErrorString(retcode) << endl;
 #endif
 }
+float_sw4* EW::newmanaged(size_t len){
+   void *ptr;
+   //std::cout<<"******Using overloaded new**********\n";
+   //cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachHost);
+#ifdef CUDA_CODE
+   cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachGlobal);
+   map[ptr]=len*sizeof(float_sw4);
+   prefetched[ptr]=false;
+   cudaDeviceSynchronize();
+#else
+   //ptr=malloc(len*sizeof(float_sw4));
+#ifdef ASSUME_ALIGNED
+   ptr=_mm_malloc(len*sizeof(float_sw4),ASSUME_ALIGNED);
+#else
+   ptr=new double[len];
+#endif
+#endif
+   return (float_sw4*)ptr;
+}
+float_sw4* EW::newmanagedh(size_t len){
+   void *ptr;
+   //std::cout<<"******Using overloaded new**********\n";
+   //cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachHost);
+#ifdef CUDA_CODE
+   cudaMalloc(&ptr, len*sizeof(float_sw4));
+   //cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachGlobal);
+   map[ptr]=len*sizeof(float_sw4);
+   //prefetched[ptr]=false;
+   cudaDeviceSynchronize();
+#else
+   ptr=malloc(len*sizeof(float_sw4));
+#endif
+   return (float_sw4*)ptr;
+}
+void EW::delmanaged(float_sw4* &dptr){
+#ifdef CUDA_CODE
+  if (map.find(dptr)!=map.end())
+    map.erase(dptr);
+  else{
+    std::cerr<<"ERROR EW::delamanged trying to delete non-managed pointer\n";
+    abort();
+  }
+  cudaDeviceSynchronize();
+  cudaFree((void*)dptr);
+#else
+  free((void*)dptr);
+#endif
+  dptr=NULL;
+}
+int EW::prefetch(void *ptr,int device){
+#ifdef CUDA_CODE
+  if (ptr==NULL) return 0;
+  if (prefetched[ptr]) return 0;
+  prefetched[ptr]=true;
+  PUSH_RANGE("EW::PREFETCH",2);
 
+  if (map.find(ptr)!=map.end()){
+    cudaMemPrefetchAsync(ptr, 
+			 map[ptr],
+			 device,
+			 0);
+
+    SYNC_DEVICE
+      POP_RANGE;
+      return 0;
+  }
+  else{
+    //std::cout<<"BAD PREFETCH\n";
+    return 1;
+  }
+#else
+  return 0;
+#endif
+}
+int EW::prefetchforced(void *ptr,int device){
+#ifdef CUDA_CODE
+  if (ptr==NULL) return 0;
+  prefetched[ptr]=true;
+  PUSH_RANGE("EW::PREFETCHFORCED",2);
+
+  if (map.find(ptr)!=map.end()){
+    cudaMemPrefetchAsync(ptr, 
+			 map[ptr],
+			 device,
+			 0);
+
+    SYNC_DEVICE
+      POP_RANGE;
+      return 0;
+  }
+  else{
+    //std::cout<<"BAD PREFETCH\n";
+    return 1;
+  }
+#else
+  return 0;
+#endif
+}
+
+void EW::AMPI_Sendrecv(float_sw4* a, int scount, std::tuple<int,int,int> &sendt, int sendto, int stag,
+		       float_sw4* b, int rcount, std::tuple<int,int,int> &recvt, int recvfrom, int rtag,
+		       std::tuple<float_sw4*,float_sw4*> &buf,
+		       MPI_Comm comm, MPI_Status *status){
+  PUSH_RANGE_PAYLOAD("AMPI_SENDRECV",stag%6,stag);
+  MPI_Request send_req,recv_req;
+  
+  int recv_count=std::get<0>(recvt)*std::get<1>(recvt);
+  int send_count=std::get<0>(sendt)*std::get<1>(sendt);
+  
+  // std::cout<<"send_count "<<send_count<<" recv_count "<<recv_count<<"\n";
+  if (recvfrom!=MPI_PROC_NULL)
+    if (MPI_Irecv(std::get<1>(buf),recv_count,MPI_DOUBLE,recvfrom,rtag,comm,&recv_req)!=MPI_SUCCESS) std::cerr<<"MPI_Irecv failed in EW::AMPI_Sendrecv\n";
+
+  if (sendto!=MPI_PROC_NULL){
+    getbuffer_device(a,std::get<0>(buf),sendt);
+    //std::cout<<"SENDING :: "<<sendto<<" ";
+    //for(int i=0;i<10;i++) std::cout<<std::get<0>(buf)[i]<<" ";
+    //std::cout<<"\n";
+    if (MPI_Isend(std::get<0>(buf),send_count,MPI_DOUBLE,sendto,stag,comm,&send_req)!=MPI_SUCCESS) std::cerr<<"MPI_Isend failed in EW::AMPI_Sendrecv\n";
+  }
+  MPI_Status send_status,recv_status;
+
+  if (recvfrom!=MPI_PROC_NULL){
+    if (MPI_Wait(&recv_req,&recv_status)!=MPI_SUCCESS) std::cerr<<"MPI_WAIT RECV FAILED IN AMPI_SENDrecv\n";
+    putbuffer_device(b,std::get<1>(buf),recvt);
+    //std::cout<<"RECEIVING :: "<<recvfrom<<" ";
+    //for(int i=0;i<10;i++) std::cout<<std::get<1>(buf)[i]<<" ";
+    //std::cout<<"\n";
+  }
+  
+  if (sendto!=MPI_PROC_NULL)
+    if (MPI_Wait(&send_req,&send_status)!=MPI_SUCCESS) std::cerr<<"MPI_WAIT SEND FAILED IN AMPI_SENDrecv\n";
+
+  POP_RANGE;
+}
+
+
+AMPI_Ret_type
+EW::AMPI_SendrecvSplit(float_sw4* a, int scount, std::tuple<int,int,int> &sendt, int sendto, int stag,
+		       float_sw4* b, int rcount, std::tuple<int,int,int> &recvt, int recvfrom, int rtag,
+		       std::tuple<float_sw4*,float_sw4*> &buf,
+		       MPI_Comm comm, MPI_Status *status){
+  PUSH_RANGE_PAYLOAD("AMPI_SR_SPLIT",stag%6,stag);
+  MPI_Request *send_req,*recv_req;
+  send_req = new MPI_Request;
+  recv_req = new MPI_Request;
+
+  //*send_req = MPI_REQUEST_NULL;
+  //*recv_req = MPI_REQUEST_NULL;
+
+  int recv_count=std::get<0>(recvt)*std::get<1>(recvt);
+  int send_count=std::get<0>(sendt)*std::get<1>(sendt);
+  
+  // std::cout<<"send_count "<<send_count<<" recv_count "<<recv_count<<"\n";
+  if (recvfrom!=MPI_PROC_NULL){
+    if (MPI_Irecv(std::get<1>(buf),recv_count,MPI_DOUBLE,recvfrom,rtag,comm,recv_req)!=MPI_SUCCESS) std::cerr<<"MPI_Irecv failed in EW::AMPI_SendrecvSplit\n";
+  } else *recv_req = MPI_REQUEST_NULL;
+
+  if (sendto!=MPI_PROC_NULL){
+    getbuffer_device(a,std::get<0>(buf),sendt);
+    //std::cout<<"SENDING :: "<<sendto<<" ";
+    //for(int i=0;i<10;i++) std::cout<<std::get<0>(buf)[i]<<" ";
+    //std::cout<<"\n";
+    if (MPI_Isend(std::get<0>(buf),send_count,MPI_DOUBLE,sendto,stag,comm,send_req)!=MPI_SUCCESS) std::cerr<<"MPI_Isend failed in EW::AMPI_SendrecvSplit\n";
+  } else *send_req = MPI_REQUEST_NULL;
+
+  // if (recvfrom!=MPI_PROC_NULL){
+  //   if (MPI_Wait(recv_req,&recv_status)!=MPI_SUCCESS) std::cerr<<"MPI_WAIT RECV FAILED IN AMPI_SENDrecv\n";
+  //   putbuffer_device(b,std::get<1>(buf),recvt);
+  // }
+  
+  //std::tuple<MPI_Status,double *, double *, std::tuple<int,int,int> &,MPI_Status> retval;
+  auto retval = std::make_tuple(recv_req,b,std::get<1>(buf),recvt,send_req);
+  POP_RANGE;
+  return retval;
+}
+
+void EW::AMPI_SendrecvSync(std::vector<AMPI_Ret_type> &list){
+  //std::cout<<"AMPI_SYNC.."<<MPI_REQUEST_NULL;
+  PUSH_RANGE("AMPI_SYNC",4);
+  MPI_Request *waitlist;
+  int indx;
+  waitlist = new MPI_Request[list.size()];
+  //for (int i=0;i<list.size();i++) std::cout<<i<<"["<<*std::get<0>(list[i])<<","<<std::get<1>(list[i])<<","<<std::get<2>(list[i])<<","<<*std::get<4>(list[i])<<"]  ";
+  //std::cout<<"EOL\n";
+  const bool ordered=false;
+  if (ordered){
+    for (int i=0;i<list.size();i++){
+      if (*std::get<0>(list[i])!=MPI_REQUEST_NULL){
+	//std::cout<<i<<"["<<*std::get<0>(list[i])<<","<<std::get<1>(list[i])<<","<<std::get<2>(list[i])<<","<<*std::get<4>(list[i])<<"]  ";
+	//std::cout<<"EOL\n";
+	MPI_Status status;
+	if (MPI_Wait(std::get<0>(list[i]),&status)!=MPI_SUCCESS) std::cout<<"ERROR:: MPI_Wait failed on line :"<<__LINE__<<" in "<<__FILE__<<"\n";
+	putbuffer_device(std::get<1>(list[i]),std::get<2>(list[i]),std::get<3>(list[i]));
+      }
+    }
+  } else {
+    for (int i=0;i<list.size();i++) waitlist[i]=*(std::get<0>(list[i]));
+    for (int i=0;i<list.size();i++){
+      MPI_Status status;
+      if (MPI_Waitany(list.size(),waitlist,&indx,&status)!=MPI_SUCCESS) std::cout<<"ERROR:: MPI failed on line :"<<__LINE__<<" in "<<__FILE__<<"\n";
+      if (indx>=0)
+	putbuffer_device(std::get<1>(list[indx]),std::get<2>(list[indx]),std::get<3>(list[indx]));
+    }
+  }
+  for (int i=0;i<list.size();i++) waitlist[i]=*(std::get<4>(list[i]));
+  MPI_Status *stats = new MPI_Status[list.size()];
+  if (MPI_Waitall(list.size(),waitlist,stats)!=MPI_SUCCESS) std::cerr<<"ERROR in MPI_Waitany in"<<__LINE__<<"\n";
+  delete [] stats;
+  delete [] waitlist;
+  for (int i=0;i<list.size();i++){
+    //MPI_Request_free(std::get<0>(list[i]));
+    //MPI_Request_free(std::get<4>(list[i]));
+    delete std::get<0>(list[i]);
+    delete std::get<4>(list[i]);
+  }
+  //std::cout<<"Done \n";
+  POP_RANGE;
+}
+void EW::getbuffer(float_sw4 *data, float_sw4* buf, std::tuple<int,int,int> &mtype ){
+
+  int count=std::get<0>(mtype);
+  int bl = std::get<1>(mtype);
+  int stride = std::get<2>(mtype);
+  for (int i=0;i<count;i++){
+    for (int k=0;k<bl;k++) buf[k+i*bl]=data[i*stride+k];
+  }
+}
+void EW::getbuffer_device(float_sw4 *data, float_sw4* buf, std::tuple<int,int,int> &mtype ){
+
+  int count=std::get<0>(mtype);
+  int bl = std::get<1>(mtype);
+  int stride = std::get<2>(mtype);
+  //std::cout<<"getbuffer_device...";
+  PUSH_RANGE_PAYLOAD("GET_BUFFER",1,count*bl);
+  //PREFETCHFORCED(buf);
+  forall<EXEC > (0,count,[=] RAJA_DEVICE(int i){
+    for (int k=0;k<bl;k++) buf[k+i*bl]=data[i*stride+k];
+  });
+
+  SYNC_DEVICE;
+  POP_RANGE;
+  //std::cout<<"Done\n";
+}
+
+void EW::putbuffer(float_sw4 *data, float_sw4* buf, std::tuple<int,int,int> &mtype ){
+  int count=std::get<0>(mtype);
+  int bl = std::get<1>(mtype);
+  int stride = std::get<2>(mtype);
+  for (int i=0;i<count;i++){
+    for (int k=0;k<bl;k++) data[i*stride+k]=buf[k+i*bl];
+  }
+  
+}
+void EW:: buffdiff(float_sw4* buf1, float_sw4*buf2,std::tuple<int,int,int> &mtype){
+  int count=std::get<0>(mtype);
+  int bl = std::get<1>(mtype);
+  int stride = std::get<2>(mtype);
+  int lc=0;
+  for(int i=0;i<count;i++) for(int k=0;k<bl;k++) if (buf1[k+i*bl]!=buf2[k+i*bl]) {
+      std:cout<<"DIFF "<<i<<" "<<k<<" "<<k+i*bl<<" "<<buf1[k+i*bl]<< " "<<buf2[k+i*bl]<<"\n";
+	lc++;
+	if (lc==2) return;
+      }
+}
+void EW::putbuffer_device(float_sw4 *data, float_sw4* buf, std::tuple<int,int,int> &mtype ){
+  int count=std::get<0>(mtype);
+  int bl = std::get<1>(mtype);
+  int stride = std::get<2>(mtype);
+  //std::cout<<"putbuffer_device...";
+  PUSH_RANGE_PAYLOAD("PUT_BUFFER",2,count*bl);
+  //PREFETCHFORCED(buf);
+  forall<EXEC > (0,count,[=] RAJA_DEVICE(int i){
+      for (int k=0;k<bl;k++) data[i*stride+k]=buf[k+i*bl];
+    });
+
+  SYNC_DEVICE;
+  //std::cout<<"Done\n";
+  POP_RANGE;
+}
+//-----------------------------------------------------------------------
+void EW::get_exact_point_source2( float_sw4* up, float_sw4 t, int g, Source& source,
+				 int* wind )
+{
+   timeDep tD;
+   if(!( source.getName() == "SmoothWave" || source.getName() == "VerySmoothBump" ||
+	 source.getName() == "C6SmoothBump" || source.getName()== "Gaussian") )
+   {
+      cout << "EW::get_exact_point_source: Error, time dependency must be SmoothWave, VerySmoothBump, C6SmoothBump, or Gaussian, not "
+	   << source.getName() << endl;
+      return;
+   }
+   else if( source.getName() == "SmoothWave" )
+      tD = iSmoothWave;
+   else if( source.getName() == "VerySmoothBump" )
+      tD = iVerySmoothBump;
+   else if( source.getName() == "C6SmoothBump" )
+      tD = iC6SmoothBump;
+   else
+      tD = iGaussian;
+
+   //   u.set_to_zero();
+   // Assume constant material, sample it in middle of domain
+   int imid = (m_iStart[g]+m_iEnd[g])/2;
+   int jmid = (m_jStart[g]+m_jEnd[g])/2;
+   int kmid = (m_kStart[g]+m_kEnd[g])/2;
+   float_sw4 rho   = mRho[g](imid,jmid,kmid);
+   float_sw4 beta  =  sqrt( mMu[g](imid,jmid,kmid)/rho);
+   float_sw4 alpha =  sqrt( (2*mMu[g](imid,jmid,kmid)+mLambda[g](imid,jmid,kmid))/rho);
+
+      //   double alpha = m_point_source_test->m_cp;
+      //   double beta  = m_point_source_test->m_cs;
+      //   double rho   = m_point_source_test->m_rho;
+
+   float_sw4 x0    = source.getX0();
+   float_sw4 y0    = source.getY0();
+   float_sw4 z0    = source.getZ0();
+   float_sw4 fr=source.getFrequency();
+   float_sw4 time = (t-source.getOffset()) * source.getFrequency();
+   if( tD == iGaussian )
+   {
+      fr = 1/fr;
+      time = time*fr;
+   }
+   bool ismomentsource = source.isMomentSource();
+   float_sw4 fx, fy, fz;
+   float_sw4 mxx, myy, mzz, mxy, mxz, myz, m0;
+
+   if( !ismomentsource )
+   {
+      source.getForces( fx, fy, fz );
+   }
+   else
+   {
+      source.getMoments( mxx, mxy, mxz, myy, myz, mzz );
+      //      m0  = source.getAmplitude();
+      m0 = 1;
+   }
+   //   bool curvilinear = topographyExists() && g == mNumberOfGrids-1;
+   bool curvilinear = false;
+   //   float_sw4* up = u.c_ptr();
+   float_sw4 h   = mGridSize[g];
+   float_sw4 eps = 1e-3*h;
+   //size_t ind = 0;
+   int imax, imin, jmax, jmin, kmax, kmin;
+   if( wind == 0 )
+   {
+      imin = m_iStart[g];
+      imax = m_iEnd[g];
+      jmin = m_jStart[g];
+      jmax = m_jEnd[g];
+      kmin = m_kStart[g];
+      kmax = m_kEnd[g];
+   }
+   else
+   {
+      imin = wind[0];
+      imax = wind[1];
+      jmin = wind[2];
+      jmax = wind[3];
+      kmin = wind[4];
+      kmax = wind[5];
+   }
+   // Note: Use of ind, assumes loop is over the domain over which u is defined.
+   //   for( int k=m_kStart[g] ; k <= m_kEnd[g] ; k++ )
+   //      for( int j=m_jStart[g] ; j <= m_jEnd[g] ; j++ )
+   //	 for( int i=m_iStart[g] ; i <= m_iEnd[g] ; i++ )
+   //   for( int k=kmin ; k <= kmax ; k++ )
+   //   for( int j=jmin ; j <= jmax ; j++ )
+   //	 for( int i=imin ; i <= imax ; i++ )
+   int m_zmin_local= m_zmin[g];
+   //PrintPointerAttributes(up);
+   if( !ismomentsource )
+     {
+   forallN<EXEC_CARTBC, int, int,int>(
+				  RangeSegment(kmin,kmax+1),
+				  RangeSegment(jmin,jmax+1),
+				  RangeSegment(imin,imax+1),
+				  [=] RAJA_DEVICE(int k, int j, int i) {
+	 
+            float_sw4 x,y,z;
+	    size_t ind = (i-imin)+(j-jmin)*(imax-imin+1)+(k-kmin)*(jmax-jmin+1)*(imax-imin+1);
+	    //	    if( curvilinear )
+	    //	    {
+	    //               x = mX(i,j,k);
+	    //	       y = mY(i,j,k);
+	    //	       z = mZ(i,j,k);
+	    //	    }
+	    //	    else
+	    {
+	       x = (i-1)*h;
+	       y = (j-1)*h;
+	       z = (k-1)*h + m_zmin_local;
+	    }
+
+	       float_sw4 R = sqrt( (x - x0)*(x - x0) + (y - y0)*(y - y0) + (z - z0)*(z - z0) );
+	       if( R < eps )
+		  up[3*ind] = up[3*ind+1] = up[3*ind+2] = 0;
+	       else
+	       {
+		  float_sw4 A, B;
+		  if (tD == iSmoothWave)
+		  {
+		     A = ( 1/pow(alpha,2) * SmoothWave(time, fr*R, alpha) - 1/pow(beta,2) * SmoothWave(time, fr*R, beta) +
+			   3/pow(fr*R,2) * SmoothWave_x_T_Integral(time, fr*R, alpha, beta) ) / (4*M_PI*rho*R*R*R)  ;
+	  
+		     B = ( 1/pow(beta,2) * SmoothWave(time, fr*R, beta) -
+			   1/pow(fr*R,2) * SmoothWave_x_T_Integral(time, fr*R, alpha, beta) ) / (4*M_PI*rho*R) ;
+		  }
+		  else if (tD == iVerySmoothBump)
+		  {
+		     A = ( 1/pow(alpha,2) * VerySmoothBump(time, fr*R, alpha) - 1/pow(beta,2) * VerySmoothBump(time, fr*R, beta) +
+			   3/pow(fr*R,2) * VerySmoothBump_x_T_Integral(time, fr*R, alpha, beta) ) / (4*M_PI*rho*R*R*R)  ;
+		     
+		     B = ( 1/pow(beta,2) * VerySmoothBump(time, fr*R, beta) -
+			   1/pow(fr*R,2) * VerySmoothBump_x_T_Integral(time, fr*R, alpha, beta) ) / (4*M_PI*rho*R) ;
+		  }
+		  else if (tD == iC6SmoothBump)
+		  {
+		     A = ( 1/pow(alpha,2) * C6SmoothBump(time, fr*R, alpha) - 1/pow(beta,2) * C6SmoothBump(time, fr*R, beta) +
+			   3/pow(fr*R,2) * C6SmoothBump_x_T_Integral(time, fr*R, alpha, beta) ) / (4*M_PI*rho*R*R*R)  ;
+		     
+		     B = ( 1/pow(beta,2) * C6SmoothBump(time, fr*R, beta) -
+			   1/pow(fr*R,2) * C6SmoothBump_x_T_Integral(time, fr*R, alpha, beta) ) / (4*M_PI*rho*R) ;
+		  }
+                  else if( tD == iGaussian )
+		  {
+		     A = ( 1/pow(alpha,2) * Gaussian(time, R, alpha,fr) - 1/pow(beta,2) * Gaussian(time, R, beta,fr) +
+			   3/pow(R,2) * Gaussian_x_T_Integral(time, R, fr, alpha, beta) ) / (4*M_PI*rho*R*R*R)  ;
+		     
+		     B = ( 1/pow(beta,2) * Gaussian(time, R, beta,fr) -
+			   1/pow(R,2) * Gaussian_x_T_Integral(time, R, fr, alpha, beta) ) / (4*M_PI*rho*R) ;
+		  }
+		  up[3*ind]   = ( (x - x0)*(x - x0)*fx + (x - x0)*(y - y0)*fy + (x - x0)*(z - z0)*fz )*A + fx*B;
+		  up[3*ind+1] = ( (y - y0)*(x - x0)*fx + (y - y0)*(y - y0)*fy + (y - y0)*(z - z0)*fz )*A + fy*B;
+		  up[3*ind+2] = ( (z - z0)*(x - x0)*fx + (z - z0)*(y - y0)*fy + (z - z0)*(z - z0)*fz )*A + fz*B;
+	       }
+				  });}
+	    else 
+	      {
+		forallN<EXEC_CARTBC, int, int,int>(
+						   RangeSegment(kmin,kmax+1),
+						   RangeSegment(jmin,jmax+1),
+						   RangeSegment(imin,imax+1),
+						   [=] RAJA_DEVICE(int k, int j, int i) {
+						     size_t ind = (i-imin)+(j-jmin)*(imax-imin+1)+(k-kmin)*(jmax-jmin+1)*(imax-imin+1);
+						     up[3*ind] = up[3*ind+1] = up[3*ind+2] = 0;
+						     // Here, ismomentsource == true
+						     float_sw4 x,y,z;
+						     {
+						     x = (i-1)*h;
+	       y = (j-1)*h;
+	       z = (k-1)*h + m_zmin_local;
+	    }
+	       float_sw4 R = sqrt( (x - x0)*(x - x0) + (y - y0)*(y - y0) + (z - z0)*(z - z0) );
+	       if( R < eps )
+	       {
+	       	  up[3*ind] = up[3*ind+1] = up[3*ind+2] = 0;
+	       }
+	       else
+	       {
+		  float_sw4 A, B, C, D, E;
+		  if (tD == iSmoothWave)
+		  {
+		     A = SmoothWave(time, R, alpha);
+		     B = SmoothWave(time, R, beta);
+		     C = SmoothWave_x_T_Integral(time, R, alpha, beta);
+		     D = d_SmoothWave_dt(time, R, alpha) / pow(alpha,3) / R;
+		     E = d_SmoothWave_dt(time, R, beta) / pow(beta,3) / R;
+		  }
+		  else if (tD == iVerySmoothBump)
+		  {
+		     A = VerySmoothBump(time, R, alpha);
+		     B = VerySmoothBump(time, R, beta);
+		     C = VerySmoothBump_x_T_Integral(time, R, alpha, beta);
+		     D = d_VerySmoothBump_dt(time, R, alpha) / pow(alpha,3) / R;
+		     E = d_VerySmoothBump_dt(time, R, beta) / pow(beta,3) / R;
+		  }
+		  else if (tD == iC6SmoothBump)
+		  {
+		     A = C6SmoothBump(time, R, alpha);
+		     B = C6SmoothBump(time, R, beta);
+		     C = C6SmoothBump_x_T_Integral(time, R, alpha, beta);
+		     D = d_C6SmoothBump_dt(time, R, alpha) / pow(alpha,3) / R;
+		     E = d_C6SmoothBump_dt(time, R, beta) / pow(beta,3) / R;
+		  }
+		  else if (tD == iGaussian)
+		  {
+		     A = Gaussian(time, R, alpha,fr);
+		     B = Gaussian(time, R, beta,fr);
+		     C = Gaussian_x_T_Integral(time, R, fr,alpha, beta);
+		     D = d_Gaussian_dt(time, R, alpha,fr) / pow(alpha,3) / R;
+		     E = d_Gaussian_dt(time, R, beta,fr) / pow(beta,3) / R;
+		  }
+		  up[3*ind] += 
+	// m_xx*G_xx,x
+		     + m0*mxx/(4*M_PI*rho)*
+		     ( 
+		      + 3*(x-x0)*(x-x0)*(x-x0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      - 2*(x-x0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(x-x0)*(x-x0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+	 
+		      + ( 15*(x-x0)*(x-x0)*(x-x0) / pow(R,7) - 6*(x-x0) / pow(R,5) ) * C
+	 
+		      + (x-x0)*(x-x0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+	 
+		      - 1 / pow(R,3) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+
+		      - 3*(x-x0) / pow(R,5) * C
+
+		      + (x-x0) / (pow(R,3)*pow(beta,2)) * B
+
+		      + 1 / R * (x-x0)*E
+		      );
+		  up[3*ind] +=
+		     // m_yy*G_xy,y
+		     + m0*myy/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      - (x-x0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(y-y0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+
+		      + 3*(x-x0)*(y-y0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+
+		      + ( 15*(x-x0)*(y-y0)*(y-y0) / pow(R,7) - 3*(x-x0) / pow(R,5) ) * C
+		      );
+		  up[3*ind] +=
+		     // m_zz*G_xz,z
+		     + m0*mzz/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(z-z0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      - (x-x0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(z-z0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+
+		      + 3*(x-x0)*(z-z0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+
+		      + ( 15*(x-x0)*(z-z0)*(z-z0) / pow(R,7) - 3*(x-x0) / pow(R,5) ) * C
+		      );
+		  up[3*ind] +=
+		     // m_xy*G_xy,x
+		     + m0*mxy/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(x-x0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      - (y-y0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(y-y0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+
+		      + 3*(x-x0)*(y-y0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+
+		      + ( 15*(x-x0)*(x-x0)*(y-y0) / pow(R,7) - 3*(y-y0) / pow(R,5) ) * C
+		      );
+		  up[3*ind] +=
+		     // m_xy*G_xx,y
+		     + m0*mxy/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(x-x0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(x-x0)*(x-x0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+	 
+		      + 15*(x-x0)*(x-x0)*(y-y0) / pow(R,7) * C
+	 
+		      + (x-x0)*(x-x0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+	 
+		      - 1 / pow(R,3) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+
+		      - 3*(y-y0) / pow(R,5) * C
+
+		      + (y-y0) / (pow(R,3)*pow(beta,2)) * B
+
+		      + 1 / R * (y-y0)*E
+		      );
+		  up[3*ind] +=
+		     // m_xz*G_xz,x
+		     + m0*mxz/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(x-x0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      - (z-z0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(z-z0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+
+		      + 3*(x-x0)*(z-z0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+
+		      + ( 15*(x-x0)*(x-x0)*(z-z0) / pow(R,7) - 3*(z-z0) / pow(R,5) ) * C
+		      );
+		  up[3*ind] +=
+		     // m_yz*G_xz,y
+		     + m0*myz/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(z-z0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+
+		      + 3*(x-x0)*(z-z0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+
+		      + 15*(x-x0)*(y-y0)*(z-z0) / pow(R,7) * C
+		      );
+		  up[3*ind] +=
+		     // m_xz*G_xx,z
+		     + m0*mxz/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(x-x0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(x-x0)*(x-x0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+	 
+		      + 15*(x-x0)*(x-x0)*(z-z0) / pow(R,7) * C
+	 
+		      + (x-x0)*(x-x0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+	 
+		      - 1 / pow(R,3) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+
+		      - 3*(z-z0) / pow(R,5) * C
+
+		      + (z-z0) / (pow(R,3)*pow(beta,2)) * B
+
+		      + 1 / R * (z-z0)*E
+		      );
+		  up[3*ind] +=
+		     // m_yz*G_yx,z
+		     + m0*myz/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(y-y0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+
+		      + 3*(x-x0)*(y-y0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+
+		      + 15*(x-x0)*(y-y0)*(z-z0) / pow(R,7) * C
+		      );
+		  //------------------------------------------------------------
+		  up[3*ind+1] += 
+		     // m_xx*G_xy,x
+		     m0*mxx/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(x-x0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      - (y-y0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(y-y0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+
+		      + 3*(x-x0)*(y-y0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+
+		      + ( 15*(x-x0)*(x-x0)*(y-y0) / pow(R,7) - 3*(y-y0) / pow(R,5) ) * C
+		      );
+		  up[3*ind+1] += 
+		     // m_yy**G_yy,y
+		     + m0*myy/(4*M_PI*rho)*
+		     ( 
+		      + 3*(y-y0)*(y-y0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      - 2*(y-y0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(y-y0)*(y-y0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+	 
+		      + ( 15*(y-y0)*(y-y0)*(y-y0) / pow(R,7) - 6*(y-y0) / pow(R,5) ) * C
+	 
+		      + (y-y0)*(y-y0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+	 
+		      - 1 / pow(R,3) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+
+		      - 3*(y-y0) / pow(R,5) * C
+
+		      + (y-y0) / (pow(R,3)*pow(beta,2)) * B
+
+		      + 1 / R * (y-y0)*E
+		      );
+		  up[3*ind+1] += 
+		     // m_zz*G_zy,z
+		     + m0*mzz/(4*M_PI*rho)*
+		     (
+		      + 3*(z-z0)*(z-z0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      - (y-y0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (z-z0)*(y-y0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+
+		      + 3*(z-z0)*(y-y0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+
+		      + ( 15*(z-z0)*(z-z0)*(y-y0) / pow(R,7) - 3*(y-y0) / pow(R,5) ) * C
+		      );
+		  up[3*ind+1] += 
+		     // m_xy*G_yy,x
+		     + m0*mxy/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(y-y0)*(y-y0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+	  
+		      + 15*(x-x0)*(y-y0)*(y-y0) / pow(R,7) * C
+	  
+		      + (y-y0)*(y-y0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+	  
+		      - 1 / pow(R,3) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+	  
+		      - 3*(x-x0) / pow(R,5) * C
+	  
+		      + (x-x0) / (pow(R,3)*pow(beta,2)) * B
+	  
+		      + 1 / R * (x-x0)*E
+		      );
+		  up[3*ind+1] += 
+		     // m_xz*G_zy,x
+		     + m0*mxz/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	  
+		      + (y-y0)*(z-z0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+	  
+		      + 3*(y-y0)*(z-z0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+	  
+		      + 15*(x-x0)*(y-y0)*(z-z0) / pow(R,7) * C
+		      );
+		  up[3*ind+1] += 
+		     // m_xy*G_xy,y
+		     + m0*mxy/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	  
+		      - (x-x0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+	  
+		      + (x-x0)*(y-y0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+	  
+		      + 3*(x-x0)*(y-y0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+	  
+		      + ( 15*(x-x0)*(y-y0)*(y-y0) / pow(R,7) - 3*(x-x0) / pow(R,5) ) * C
+		      );
+		  up[3*ind+1] += 
+		     // m_yz*G_zy,y
+		     + m0*myz/(4*M_PI*rho)*
+		     (
+		      + 3*(z-z0)*(y-y0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	  
+		      - (z-z0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+	  
+		      + (z-z0)*(y-y0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+	  
+		      + 3*(z-z0)*(y-y0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+	  
+		      + ( 15*(z-z0)*(y-y0)*(y-y0) / pow(R,7) - 3*(z-z0) / pow(R,5) ) * C
+		      );
+		  up[3*ind+1] += 
+		     // m_xz*G_xy,z
+		     + m0*mxz/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	  
+		      + (x-x0)*(y-y0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+	  
+		      + 3*(x-x0)*(y-y0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+	  
+		      + 15*(x-x0)*(y-y0)*(z-z0) / pow(R,7) * C
+		      );
+		  up[3*ind+1] += 
+		     // m_yz*G_yy,z
+		     + m0*myz/(4*M_PI*rho)*
+		     (
+		      + 3*(z-z0)*(y-y0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(y-y0)*(y-y0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+	  
+		      + 15*(z-z0)*(y-y0)*(y-y0) / pow(R,7) * C
+	  
+		      + (y-y0)*(y-y0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+	  
+		      - 1 / pow(R,3) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+	  
+		      - 3*(z-z0) / pow(R,5) * C
+	  
+		      + (z-z0) / (pow(R,3)*pow(beta,2)) * B
+	  
+		      + 1 / R * (z-z0)*E
+		      );
+		  //------------------------------------------------------------
+		  up[3*ind+2] += 
+		     // m_xx*G_zx,x
+		     + m0*mxx/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(x-x0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      - (z-z0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(z-z0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+
+		      + 3*(x-x0)*(z-z0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+
+		      + ( 15*(x-x0)*(x-x0)*(z-z0) / pow(R,7) - 3*(z-z0) / pow(R,5) ) * C
+		      );
+		  up[3*ind+2] += 
+		     // m_yy*G_zy,y
+		     + m0*myy/(4*M_PI*rho)*
+		     (
+		      + 3*(y-y0)*(y-y0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      - (z-z0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (y-y0)*(z-z0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+
+		      + 3*(y-y0)*(z-z0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+
+		      + ( 15*(y-y0)*(y-y0)*(z-z0) / pow(R,7) - 3*(z-z0) / pow(R,5) ) * C
+		      );
+		  up[3*ind+2] += 
+		     // m_zz**G_zz,z
+		     + m0*mzz/(4*M_PI*rho)*
+		     ( 
+		      + 3*(z-z0)*(z-z0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      - 2*(z-z0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(z-z0)*(z-z0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+	 
+		      + ( 15*(z-z0)*(z-z0)*(z-z0) / pow(R,7) - 6*(z-z0) / pow(R,5) ) * C
+	 
+		      + (z-z0)*(z-z0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+	 
+		      - 1 / pow(R,3) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+
+		      - 3*(z-z0) / pow(R,5) * C
+
+		      + (z-z0) / (pow(R,3)*pow(beta,2)) * B
+
+		      + 1 / R * (z-z0)*E
+		      );
+		  up[3*ind+2] += 
+		     // m_xy*G_zy,x
+		     + m0*mxy/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	  
+		      + (y-y0)*(z-z0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+	  
+		      + 3*(y-y0)*(z-z0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+	  
+		      + 15*(x-x0)*(y-y0)*(z-z0) / pow(R,7) * C
+		      );
+		  up[3*ind+2] += 
+		     // m_xz**G_zz,x
+		     + m0*mxz/(4*M_PI*rho)*
+		     ( 
+		      + 3*(x-x0)*(z-z0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(z-z0)*(z-z0) / pow(R,5) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+	 
+		      + 15*(x-x0)*(z-z0)*(z-z0) / pow(R,7) * C
+	 
+		      + (z-z0)*(z-z0) / pow(R,3)* ((x-x0)*D - (x-x0)*E)
+	 
+		      - 1 / pow(R,3) * ((x-x0)*A/pow(alpha,2) - (x-x0)*B/pow(beta,2))
+
+		      - 3*(x-x0) / pow(R,5) * C
+
+		      + (x-x0) / (pow(R,3)*pow(beta,2)) * B
+
+		      + 1 / R * (x-x0)*E
+		      );
+		  up[3*ind+2] += 
+		     // m_xy*G_xz,y
+		     + m0*mxy/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(y-y0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (x-x0)*(z-z0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+
+		      + 3*(x-x0)*(z-z0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+
+		      + 15*(x-x0)*(y-y0)*(z-z0) / pow(R,7) * C
+		      );
+		  up[3*ind+2] += 
+		     // m_yz*G_zz,y
+		     + m0*myz/(4*M_PI*rho)*
+		     ( 
+		      + 3*(y-y0)*(z-z0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + 3*(z-z0)*(z-z0) / pow(R,5) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+	 
+		      + 15*(y-y0)*(z-z0)*(z-z0) / pow(R,7) * C
+	 
+		      + (z-z0)*(z-z0) / pow(R,3)* ((y-y0)*D - (y-y0)*E)
+	 
+		      - 1 / pow(R,3) * ((y-y0)*A/pow(alpha,2) - (y-y0)*B/pow(beta,2))
+
+		      - 3*(y-y0) / pow(R,5) * C
+
+		      + (y-y0) / (pow(R,3)*pow(beta,2)) * B
+
+		      + 1 / R * (y-y0)*E
+		      );
+		  up[3*ind+2] += 
+		     // m_xz*G_xz,z
+		     + m0*mxz/(4*M_PI*rho)*
+		     (
+		      + 3*(x-x0)*(z-z0)*(z-z0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      - (x-x0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+	 
+		      + (x-x0)*(z-z0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+	 
+		      + 3*(x-x0)*(z-z0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+	 
+		      + ( 15*(x-x0)*(z-z0)*(z-z0) / pow(R,7) - 3*(x-x0) / pow(R,5) ) * C
+		      );
+		  up[3*ind+2] += 
+		     // m_yz*G_yz,z
+		     + m0*myz/(4*M_PI*rho)*
+		     (
+		      + 3*(z-z0)*(z-z0)*(y-y0) / pow(R,5) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      - (y-y0) / pow(R,3) * (A/pow(alpha,2) - B/pow(beta,2))
+
+		      + (z-z0)*(y-y0) / pow(R,3)* ((z-z0)*D - (z-z0)*E)
+
+		      + 3*(z-z0)*(y-y0) / pow(R,5) * ((z-z0)*A/pow(alpha,2) - (z-z0)*B/pow(beta,2))
+
+		      + ( 15*(z-z0)*(z-z0)*(y-y0) / pow(R,7) - 3*(y-y0) / pow(R,5) ) * C
+		      );
+		  //printf("VALUE = %lf \n",up[3*ind+2]);
+	       }
+				  });}
+	    //ind++;
+				  
+#ifdef CUDA_CODE
+   cudaDeviceSynchronize();
+#endif
+}
 #ifdef SW4_CUDA
 //-----------------------------------------------------------------------
 void EW::CheckCudaCall(cudaError_t command, const char * commandName, const char * fileName, int line)
