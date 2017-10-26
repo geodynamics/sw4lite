@@ -222,12 +222,17 @@ OBJ  = main.o EW.o Sarray.o Source.o SuperGrid.o GridPointSource.o time_function
 
 FOROBJ = rhs4th3fort.o boundaryOp.o addsgd.o solerr3.o bcfort.o type_defs.o lglnodes.o dgmodule.o metric.o curvilinear4sg.o freesurfcurvisg.o
 
+FMODS = type_defs.mod
+
 ifneq ($(ckernel),yes)
   OBJ += $(FOROBJ)
 endif
-FOBJ = $(addprefix $(builddir)/,$(OBJ))
 
-sw4lite: $(FOBJ)
+# prefix object files with build directory
+FOBJ = $(addprefix $(builddir)/,$(OBJ))
+PMODS  = $(addprefix $(builddir)/,$(FMODS))
+
+sw4lite: $(PMODS) $(FOBJ)
 	@echo "********* User configuration variables **************"
 	@echo "ckernel=" $(ckernel) " debug=" $(debug) " proj=" $(proj) " etree=" $(etree) " SW4ROOT"= $(SW4ROOT) 
 	@echo "CXX=" $(CXX) "EXTRA_CXX_FLAGS"= $(EXTRA_CXX_FLAGS)
@@ -259,6 +264,10 @@ $(builddir)/%.o:src/%.f
 $(builddir)/%.o:src/%.f90
 	/bin/mkdir -p $(builddir)
 	cd $(builddir); $(FC) $(FFLAGS) -c ../$< 
+
+$(builddir)/%.mod:src/%.f90
+	/bin/mkdir -p $(builddir)
+	cd $(builddir); $(FC) $(FFLAGS) -c ../$<
 
 clean:
 	/bin/mkdir -p $(optdir)
