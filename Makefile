@@ -64,19 +64,42 @@ else ifeq ($(findstring cab,$(HOSTNAME)),cab)
   OMPOPT = -fopenmp
   EXTRA_LINK_FLAGS = -lblas -llapack -lifcore
   computername := cab
-# NERSC carl is a single node Intel KNL machine
-else ifeq ($(findstring carl,$(HOSTNAME)),carl)
-  FC = mpiifort
-  CXX = mpiicpc
-  OMPOPT = -qopenmp 
-  MKL_PATH = /usr/common/software/intel/compilers_and_libraries_2016.3.210/linux/mkl/lib/intel64
-#  EXTRA_CXX_FLAGS = -xmic-avx512
-  EXTRA_CXX_FLAGS = -xmic-avx2
-#  EXTRA_CXX_FLAGS = -no-vec -no-simd
-  EXTRA_FORT_FLAGS = -xmic-avx512,core-avx2
-  EXTRA_LINK_FLAGS = -Wl,-rpath=$(SW4ROOT)/lib -Wl,-rpath=${MKL_PATH} -L${MKL_PATH} -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -lifcore
+else ifeq ($(findstring cori,$(HOSTNAME)),cori)
+#  FC = ifort
+  FC = ftn
+  CXX = CC
+  CC = cc
+  RAJA_LOCATION=/project/projectdirs/m2545/RAJA/Raja
+  OMPOPT = -qopenmp -lmkl -qoverride-limits
+  MKL_PATH = /opt/intel/compilers_and_libraries_2018/linux/mkl/lib/intel64
+  LINK_FLAGS = -O3
+  EXTRA_LINK_FLAGS =
+# for building testil
+#  BASIC_PATH = /opt/intel/lib/intel64
+#  EXTRA_LINK_FLAGS = -Wl,-rpath=${OTHER_PATH} -L${OTHER_PATH} -lifcore -L${BASIC_PATH} -limf -lsvml -lintlc -lm -ldl 
   openmp = yes
-  computername := carl
+  computername := cori
+  LINKER = CC
+
+#
+# Cori
+else ifeq ($(findstring coriold,$(HOSTNAME)),coriold)
+# cray compiler wrappers
+  FC = ftn
+  CXX = CC
+# Cray compiler:  (requires modules: PrgEnv-cray and cray-mpich)
+# rhs4sgcurv_rev.C gives segfault with -O, try -O1 instead
+# the ftn compiler does not accept -O. Need to specify -O2
+#  OPT = -O2
+#  EXTRA_LINK_FLAGS =  # only needs module load cray-mpich
+# Intel compiler:
+  OPT = -O3
+#  OPT = -O3 -qoverride-limits
+  OMPOPT = -qopenmp
+  EXTRA_LINK_FLAGS =  -lpthread -lm -ldl -lifcore
+  openmp = yes
+  computername := cori
+
 # Trinitite 
 else ifeq ($(findstring nid00259,$(HOSTNAME)),nid00259)
   FC = ifort
@@ -100,29 +123,19 @@ else ifeq ($(findstring nid00259,$(HOSTNAME)),nid00259)
   computername := trinitite
   LINKER = CC
 
-else ifeq ($(findstring cori,$(HOSTNAME)),cori)
-  FC = ifort
-  CXX = CC
-  CC = cc
-  RAJA_LOCATION=/global/homes/r/rameshp/RAJA/install2
-  OMPOPT = -qopenmp -mkl -qoverride-limits
-  MKL_PATH = /opt/intel/compilers_and_libraries_2017/linux/mkl/lib/intel64
-  OTHER_PATH = /opt/intel/compilers_and_libraries_2017/linux/lib/intel64
-  BASIC_PATH = /opt/intel/lib/intel64
-  EXTRA_CXX_FLAGS = -xmic-avx512
-  EXTRA_C_FLAGS = -xmic-avx512
-  EXTRA_FORT_FLAGS = -xmic-avx512
-  LINK_FLAGS = -O3 -qopenmp
-  EXTRA_LINK_FLAGS =
-  #EXTRA_LINK_FLAGS = -Wl,-rpath=${MKL_PATH} -Wl,-rpath=${BASIC_PATH} -L${MKL_PATH} -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -Wl,-rpath=${OTHER_PATH} -L${OTHER_PATH} -lifcore -L${BASIC_PATH} -limf -lsvml 
-  #EXTRA_LINK_FLAGS = -L /usr/projects/hpcsoft/cle6.0/common/intel-clusterstudio/2017.1.024/compilers_and_libraries_2017.1.132/linux/mkl/lib/intel64_lin_mic -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl 
-# for building testil
-#  EXTRA_LINK_FLAGS = -Wl,-rpath=${OTHER_PATH} -L${OTHER_PATH} -lifcore -L${BASIC_PATH} -limf -lsvml -lintlc -lm -ldl 
+# NERSC carl is a single node Intel KNL machine
+else ifeq ($(findstring carl,$(HOSTNAME)),carl)
+  FC = mpiifort
+  CXX = mpiicpc
+  OMPOPT = -qopenmp 
+  MKL_PATH = /usr/common/software/intel/compilers_and_libraries_2016.3.210/linux/mkl/lib/intel64
+#  EXTRA_CXX_FLAGS = -xmic-avx512
+  EXTRA_CXX_FLAGS = -xmic-avx2
+#  EXTRA_CXX_FLAGS = -no-vec -no-simd
+  EXTRA_FORT_FLAGS = -xmic-avx512,core-avx2
+  EXTRA_LINK_FLAGS = -Wl,-rpath=$(SW4ROOT)/lib -Wl,-rpath=${MKL_PATH} -L${MKL_PATH} -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -lifcore
   openmp = yes
-  computername := cori
-  LINKER = CC
-
-
+  computername := carl
 #
 # LBL quadknl is Hans' single node Intel KNL machine
 #
@@ -143,23 +156,7 @@ else ifeq ($(findstring quadknl,$(HOSTNAME)),quadknl)
   openmp = yes
   computername := quadknl
 #
-# Cori
-else ifeq ($(findstring coriold,$(HOSTNAME)),cori)
-# cray compiler wrappers
-  FC = ftn
-  CXX = CC
-# Cray compiler:  (requires modules: PrgEnv-cray and cray-mpich)
-# rhs4sgcurv_rev.C gives segfault with -O, try -O1 instead
-# the ftn compiler does not accept -O. Need to specify -O2
-#  OPT = -O2
-#  EXTRA_LINK_FLAGS =  # only needs module load cray-mpich
-# Intel compiler:
-  OPT = -O3
-#  OPT = -O3 -qoverride-limits
-  OMPOPT = -qopenmp
-  EXTRA_LINK_FLAGS =  -lpthread -lm -ldl -lifcore
-  openmp = yes
-  computername := cori
+# Valhall
 else ifeq ($(findstring valhall,$(HOSTNAME)),valhall)
   FC = mpif90_ifort
   CXX = mpicc_icc
