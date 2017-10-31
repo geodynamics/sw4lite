@@ -77,30 +77,31 @@ def compare_one_line(base_file_name, test_file_name, errTol, absErrLimit, lineNu
     return success
 
 #------------------------------------------------
-def guess_mpi_cmd(mpi_tasks, verbose):
+def guess_mpi_cmd(mpi_tasks, omp_threads, verbose):
     if verbose: print('os.uname=', os.uname())
     node_name = os.uname()[1]
     if verbose: print('node_name=', node_name)
     sys_name = os.uname()[0]
     if verbose: print('sys_name=', sys_name)
 
+
     if 'quartz' in node_name:
-        if mpi_tasks<=0: mpi_tasks = 36
-        mpirun_cmd="srun -ppdebug -n " + str(mpi_tasks)
+        if omp_threads<=0: omp_threads=2;
+        if mpi_tasks<=0: mpi_tasks = int(36/omp_threads)
+        mpirun_cmd="srun -ppdebug -n " + str(mpi_tasks) + " -c " + str(omp_threads)
     elif 'cab' in node_name:
-        if mpi_tasks<=0: mpi_tasks = 16
-        mpirun_cmd="srun -ppdebug -n " + str(mpi_tasks)
-    elif 'nid' in node_name:
-        # all KNL nodes on cori have a node name starting with 'nid'
-        if mpi_tasks<=0: mpi_tasks = 64
-        mpirun_cmd="srun -c 4 --cpu_bind=cores -n " + str(mpi_tasks)
+        if omp_threads<=0: omp_threads=2;
+        if mpi_tasks<=0: mpi_tasks = int(16/omp_threads)
+        mpirun_cmd="srun -ppdebug -n " + str(mpi_tasks) + " -c " + str(omp_threads)
+    elif 'nid' in node_name: # the cori knl nodes are called nid
+        if omp_threads<=0: omp_threads=4;
+        if mpi_tasks<=0: mpi_tasks = int(64/omp_threads) # use 64 hardware cores per node
+        sw_threads = 4*omp_threads # Cori uses hyperthreading by default
+        mpirun_cmd="srun --cpu_bind=cores -n " + str(mpi_tasks) + " -c " + str(sw_threads)
     elif 'fourier' in node_name:
+        if omp_threads<=0: omp_threads=1;
         if mpi_tasks<=0: mpi_tasks = 4
         mpirun_cmd="mpirun -np " + str(mpi_tasks)
-    elif 'ray' in node_name:
-        if mpi_tasks<=0: mpi_tasks = 4
-        mpirun_cmd="mpirun -np " + str(mpi_tasks) 
-        if mpi_tasks > 1: mpirun_cmd += " mpibind"
     # add more machine names here
     elif 'Linux' in sys_name:
         if mpi_tasks<=0: mpi_tasks = 1
@@ -110,12 +111,12 @@ def guess_mpi_cmd(mpi_tasks, verbose):
         if mpi_tasks<=0: mpi_tasks = 1
         mpirun_cmd="mpirun -np " + str(mpi_tasks)
 
-    if verbose: print('mpirun_cmd = ', mpirun_cmd)
-
+    if verbose: print('mpirun_cmd=', mpirun_cmd)
+        
     return mpirun_cmd
 
 #------------------------------------------------
-def main_test(sw4lite_exe_dir="optimize_cuda_ray", testing_level=0, mpi_tasks=0, verbose=False):
+def main_test(sw4lite_exe_dir="optimize_cuda_ray", testing_level=0, mpi_tasks=0, omp_threads=0, verbose=False):
     assert sys.version_info >= (3,2) # named tuples in Python version >=3.3
     sep = '/'
     pytest_dir = os.getcwd()
@@ -151,11 +152,14 @@ def main_test(sw4lite_exe_dir="optimize_cuda_ray", testing_level=0, mpi_tasks=0,
         return False
 
     # guess the mpi run command from the uname info
-    mpirun_cmd=guess_mpi_cmd(mpi_tasks, verbose)
+    mpirun_cmd=guess_mpi_cmd(mpi_tasks, omp_threads, verbose)
 
     sw4lite_mpi_run = mpirun_cmd + ' ' + sw4lite_exe
     #print('sw4_mpi_run = ', sw4_mpi_run)
 
+    if (omp_threads>0):
+        os.putenv("OMP_NUM_THREADS", str(omp_threads))
+    
     num_test=0
     num_pass=0
     num_fail=0
@@ -163,12 +167,12 @@ def main_test(sw4lite_exe_dir="optimize_cuda_ray", testing_level=0, mpi_tasks=0,
     num_meshes =[1, 1, 1] # default number of meshes for level 0
 
 # Run in pytest/test_dir
-    test_dirs   =['pointsource','loh1','loh2']
+    test_dirs   =['pointsource','topo']
 # Read input file from pytest/reference/test_dir/input_file
-    input_files =['pointsource.in','LOH.1-h100.in','LOH.2-h100.in']
+    input_files =['pointsource.in','curvilinear.in']
 # Computed results files in pytest/test_dir/result_file
 # Find reference results in pytest/reference/test_dir/result_file
-    result_files=['pointsource-h0p04/PointSourceErr.txt','LOH1-h100/sta10.txt','LOH2-h100/sta10.txt']
+    result_files=['pointsource-h0p04/PointSourceErr.txt','curvilinear-output/sta03.txt']
 
     print("Running all tests for level", testing_level, "...")
     # run all tests
@@ -228,12 +232,14 @@ if __name__ == "__main__":
     testing_level=0
     verbose=False
     mpi_tasks=0 # machine dependent default
+    omp_threads=0 #no threading by default
 
     parser=argparse.ArgumentParser()
     parser.add_argument("-v", "--verbose", help="increase output verbosity", action="store_true")
     parser.add_argument("-l", "--level", type=int, choices=[0, 1, 2], 
                         help="testing level")
     parser.add_argument("-m", "--mpitasks", type=int, help="number of mpi tasks")
+    parser.add_argument("-t", "--ompthreads", type=int, help="number of omp threads per task")
     parser.add_argument("-d", "--sw4_exe_dir", help="name of directory for sw4 executable", default="optimize")
     args = parser.parse_args()
     if args.verbose:
@@ -245,10 +251,13 @@ if __name__ == "__main__":
     if args.mpitasks:
         #print("MPI-tasks specified=", args.mpitasks)
         if args.mpitasks > 0: mpi_tasks=args.mpitasks
+    if args.ompthreads:
+        #print("OMP-threads specified=", args.ompthreads)
+        if args.ompthreads > 0: omp_threads=args.ompthreads
     if args.sw4_exe_dir:
         #print("sw4_exe_dir specified=", args.sw4_exe_dir)
         sw4_exe_dir=args.sw4_exe_dir
 
-    if not main_test(sw4_exe_dir, testing_level, mpi_tasks, verbose):
-        print("test_sw4 was unsuccessful")
+    if not main_test(sw4_exe_dir, testing_level, mpi_tasks, omp_threads, verbose):
+        print("test_sw4lite was unsuccessful")
 

@@ -1,0 +1,30 @@
+The sw4lite correctness tests assume that sw4lite was built with OpenMP threading and with the
+C-kernel. The latter allows the index ordering to be switched in the developer command. 
+
+For example, from the main sw4lite directory, you can build the sw4lite executable with
+
+>make ckernel=yes omp=yes raja=yes
+
+The sw4lite executable will then reside in the directory optimize_mp_c_raja_cori.
+
+To run the sw4lite correctness tests on Cori (KNL partition) you should first start an interactive session:
+
+>salloc -N 1 -C knl,quad,cache -p debug -t 00:10:00 -L SCRATCH
+
+The test script resides in the pytest sub-directiory and is called test_sw4lite.py. The command line
+options are explained by doing
+
+>./test_sw4lite.py -h
+ 
+It is necessary to tell the python test script where to find the sw4lite executable. For example:
+
+>./test_sw4lite.py -d optimize_mp_c_raja_cori
+
+Currently, only two tests are performed. If both tests pass, you should get the following output on your screen:
+
+Running all tests for level 0 ...
+Test # 1 Input file: pointsource.in PASSED
+Test # 2 Input file: curvilinear.in PASSED
+Out of 2 tests, 0 failed and  2 passed
+
+You can adjust the number of OpenMP threads and MPI-tasks by using the -m and -t options.
