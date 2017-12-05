@@ -158,6 +158,26 @@ __global__ void rhs4lower_dev_rev( int ifirst, int ilast, int jfirst, int jlast,
 			       float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
 			       int ghost_points );
 
+__global__ void rhs4sgcurv_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+                                       float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* mMetric,
+                                       float_sw4* mJ, float_sw4* a_lu, 
+                                       int onesided4, float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
+
+__global__ void rhs4sgcurv_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+                                       float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* mMetric,
+                                       float_sw4* mJ, float_sw4* a_lu, 
+                                       int onesided4, float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
+
+__global__ void rhs4sgcurvupper_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+                                       float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* mMetric,
+                                       float_sw4* mJ, float_sw4* a_lu, 
+                                       float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
+
+__global__ void rhs4sgcurvupper_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+                                       float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* mMetric,
+                                       float_sw4* mJ, float_sw4* a_lu, 
+                                       float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
+
 __global__ void check_nan_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
 			       float_sw4* u, int* retval_dev, int* idx_dev );
 
@@ -202,6 +222,53 @@ __global__ void bcfortsg_dev_indrev( int ib, int ie, int jb, int je, int kb, int
                                      float_sw4 om, float_sw4 ph, float_sw4 cv,
                                      float_sw4* strx, float_sw4* stry );
 
+__global__ void freesurfcurvisg_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+                                     int nz, int side, float_sw4* a_u, float_sw4* a_mu, 
+                                     float_sw4* a_la, float_sw4* a_met,
+                                     float_sw4* bforce5,float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
+
+__global__ void freesurfcurvisg_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+                                     int nz, int side, float_sw4* a_u, float_sw4* a_mu, 
+                                     float_sw4* a_la, float_sw4* a_met,
+                                     float_sw4* bforce5,float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
+
+__global__ void enforceCartTopo_dev_rev( int ifirstCart, int ilastCart, int jfirstCart, int jlastCart, int kfirstCart, int klastCart,
+                                         int ifirstCurv, int ilastCurv, int jfirstCurv, int jlastCurv, int kfirstCurv, int klastCurv,
+                                         float_sw4* a_u1, float_sw4* a_u2, int ghost_points );
+
+__global__ void enforceCartTopo_dev( int ifirstCart, int ilastCart, int jfirstCart, int jlastCart, int kfirstCart, int klastCart,
+                                         int ifirstCurv, int ilastCurv, int jfirstCurv, int jlastCurv, int kfirstCurv, int klastCurv,
+                                         float_sw4* a_u1, float_sw4* a_u2, int ghost_points );
+
+__global__ void addsgd4c_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      float_sw4* a_up, float_sw4* a_u, 
+                      float_sw4* a_um, float_sw4* a_rho,
+		      float_sw4* a_dcx,  float_sw4* a_dcy, 
+                      float_sw4* a_strx, float_sw4* a_stry, 
+		      float_sw4* a_jac, float_sw4* a_cox,  float_sw4* a_coy, 
+                      float_sw4 beta, int ghost_points );
+
+__global__ void addsgd4c_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      float_sw4* a_up, float_sw4* a_u, 
+                      float_sw4* a_um, float_sw4* a_rho,
+		      float_sw4* a_dcx,  float_sw4* a_dcy, 
+                      float_sw4* a_strx, float_sw4* a_stry, 
+		      float_sw4* a_jac, float_sw4* a_cox,  float_sw4* a_coy, 
+                      float_sw4 beta, int ghost_points );
+
+__global__ void addsgd6c_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
+		      float_sw4* a_dcx,  float_sw4* a_dcy, 
+		      float_sw4* a_strx, float_sw4* a_stry,
+		      float_sw4* a_jac, float_sw4* a_cox,  float_sw4* a_coy,  
+		      float_sw4 beta, int ghost_points );
+
+__global__ void addsgd6c_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
+		      float_sw4* a_dcx,  float_sw4* a_dcy, 
+		      float_sw4* a_strx, float_sw4* a_stry,
+		      float_sw4* a_jac, float_sw4* a_cox,  float_sw4* a_coy,  
+		      float_sw4 beta, int ghost_points );
 #endif
   
 //-----------------------------------------------------------------------
@@ -233,11 +300,12 @@ void EW::evalRHSCU(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a
             m_kEnd[g], a_Uacc[g].dev_ptr(), a_U[g].dev_ptr(), a_Mu[g].dev_ptr(),
             a_Lambda[g].dev_ptr(), mGridSize[g],
             dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g], m_ghost_points );
-	//	rhs4center_dev_rev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>
-	//	        ( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g],
-	//	        m_kEnd[g], a_Uacc[g].dev_ptr(), a_U[g].dev_ptr(), a_Mu[g].dev_ptr(),
-	//	          a_Lambda[g].dev_ptr(), mGridSize[g],
-	//	          dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g], m_ghost_points );
+       //	rhs4center_dev_rev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>
+       //	        ( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g],
+       //	        m_kEnd[g], a_Uacc[g].dev_ptr(), a_U[g].dev_ptr(), a_Mu[g].dev_ptr(),
+       //	          a_Lambda[g].dev_ptr(), mGridSize[g],
+       //	          dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g], m_ghost_points );
+        CHECK_ERROR("rhs4center_dev")
       }
       else
       {
@@ -279,6 +347,53 @@ void EW::evalRHSCU(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a
 	      dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g], m_ghost_points );
       }
       CHECK_ERROR("evalRHSCU_upper")
+   }
+
+   if( m_topography_exists )
+   {
+      gridsize.x  = m_gpu_gridsize[0];
+      gridsize.y  = m_gpu_gridsize[1];
+      gridsize.z  = m_gpu_gridsize[2];
+      blocksize.x = m_gpu_blocksize[0];
+      blocksize.y = m_gpu_blocksize[1];
+      blocksize.z = m_gpu_blocksize[2];
+      int g=mNumberOfGrids-1;
+   // Boundary operator at upper boundary
+      int onesided4 = 0;  
+      if( m_onesided[g][4] )
+      {
+        onesided4 = 1;
+        blocksize.z = 1;
+        gridsize.z  = 6;
+        if( m_corder )
+  	  rhs4sgcurvupper_dev_rev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>
+	          ( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g],
+	          m_kEnd[g], a_U[g].dev_ptr(), a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(),
+	          mMetric.dev_ptr(), mJ.dev_ptr(), a_Uacc[g].dev_ptr(), 
+	          dev_sg_str_x[g], dev_sg_str_y[g], m_ghost_points );
+        else
+	  rhs4sgcurvupper_dev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>
+	          ( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g],
+	          m_kEnd[g], a_U[g].dev_ptr(), a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(),
+	          mMetric.dev_ptr(), mJ.dev_ptr(), a_Uacc[g].dev_ptr(), 
+	          dev_sg_str_x[g], dev_sg_str_y[g], m_ghost_points );
+        CHECK_ERROR("rhs4sgcurvupper")
+      }
+      gridsize.z  = m_gpu_gridsize[2];
+      blocksize.z = m_gpu_blocksize[2];
+      if( m_corder )
+	rhs4sgcurv_dev_rev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>
+	        ( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g],
+	        m_kEnd[g], a_U[g].dev_ptr(), a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(),
+	        mMetric.dev_ptr(), mJ.dev_ptr(), a_Uacc[g].dev_ptr(), 
+	        onesided4, dev_sg_str_x[g], dev_sg_str_y[g], m_ghost_points );
+      else
+	rhs4sgcurv_dev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>
+	        ( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g],
+	        m_kEnd[g], a_U[g].dev_ptr(), a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(),
+	        mMetric.dev_ptr(), mJ.dev_ptr(), a_Uacc[g].dev_ptr(), 
+	        onesided4, dev_sg_str_x[g], dev_sg_str_y[g], m_ghost_points );
+      CHECK_ERROR("rhs4sgcurv")
    }
 #endif
 }
@@ -381,7 +496,7 @@ void EW::addSuperGridDampingCU(vector<Sarray> & a_Up, vector<Sarray> & a_U,
    blocksize.x = m_gpu_blocksize[0];
    blocksize.y = m_gpu_blocksize[1];
    blocksize.z = m_gpu_blocksize[2];
-   for(int g=0 ; g<mNumberOfGrids; g++ )
+   for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
    {
       if( m_sg_damping_order == 4 )
       {
@@ -445,6 +560,49 @@ void EW::addSuperGridDampingCU(vector<Sarray> & a_Up, vector<Sarray> & a_U,
 								      dev_sg_corner_x[g], dev_sg_corner_y[g], dev_sg_corner_z[g],
 								      m_supergrid_damping_coefficient, m_ghost_points );
 	 CHECK_ERROR("addsgd6_dev")
+      }
+   }
+
+   if( m_topography_exists )
+   {
+      int g=mNumberOfGrids-1;
+      if( m_sg_damping_order == 4 )
+      {
+	 if( m_corder )
+            addsgd4c_dev_rev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>(
+              m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g], 
+              a_Up[g].dev_ptr(), a_U[g].dev_ptr(), 
+              a_Um[g].dev_ptr(), a_Rho[g].dev_ptr(),
+              dev_sg_dc_x[g], dev_sg_dc_y[g], 
+              dev_sg_str_x[g], dev_sg_str_y[g], 
+              mJ.dev_ptr(), dev_sg_corner_x[g], dev_sg_corner_y[g], 
+              m_supergrid_damping_coefficient, m_ghost_points );
+	 else
+            addsgd4c_dev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>(
+              m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g], 
+              a_Up[g].dev_ptr(), a_U[g].dev_ptr(), 
+              a_Um[g].dev_ptr(), a_Rho[g].dev_ptr(),
+              dev_sg_dc_x[g], dev_sg_dc_y[g], 
+              dev_sg_str_x[g], dev_sg_str_y[g], 
+              mJ.dev_ptr(), dev_sg_corner_x[g], dev_sg_corner_y[g], 
+              m_supergrid_damping_coefficient, m_ghost_points );
+      }
+      else if(  m_sg_damping_order == 6 )
+      {
+	 if( m_corder )
+	    addsgd6c_dev_rev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>( 
+              m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g], 
+              a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(), a_Rho[g].dev_ptr(),
+	      dev_sg_dc_x[g], dev_sg_dc_y[g], dev_sg_str_x[g], dev_sg_str_y[g], 
+	      mJ.dev_ptr(), dev_sg_corner_x[g], dev_sg_corner_y[g], 
+              m_supergrid_damping_coefficient, m_ghost_points );
+	 else
+	    addsgd6c_dev<<<gridsize,blocksize,0,m_cuobj->m_stream[st]>>>( 
+              m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g], 
+              a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(), a_Rho[g].dev_ptr(),
+	      dev_sg_dc_x[g], dev_sg_dc_y[g], dev_sg_str_x[g], dev_sg_str_y[g], 
+	      mJ.dev_ptr(), dev_sg_corner_x[g], dev_sg_corner_y[g], 
+              m_supergrid_damping_coefficient, m_ghost_points );
       }
    }
 #endif
@@ -590,6 +748,8 @@ void EW::copy_material_to_device()
       mLambda[g].copy_to_device( m_cuobj );
       mRho[g].copy_to_device( m_cuobj );
    }
+   mJ.copy_to_device(m_cuobj);
+   mMetric.copy_to_device(m_cuobj);
 #endif   
 }
 
@@ -1020,6 +1180,39 @@ void EW::enforceBCCU( vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>
                                                                        t, dev_BCForcing[g][0], dev_BCForcing[g][1], dev_BCForcing[g][2],
                                                                        dev_BCForcing[g][3], dev_BCForcing[g][4], dev_BCForcing[g][5],
                                                                        om, ph, cv, dev_sg_str_x[g], dev_sg_str_y[g] );
+
+      if( m_topography_exists && g == mNumberOfGrids-1 && m_bcType[g][4] == bStressFree )
+      {
+	 int side = 5;
+         gridsize.z = 1;
+         blocksize.z = 1;
+	 if( m_corder )
+           freesurfcurvisg_dev_rev<<<gridsize, blocksize, 0, m_cuobj->m_stream[st]>>>( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g],
+                                                                               m_global_nz[g], side, a_U[g].dev_ptr(), a_Mu[g].dev_ptr(),
+                                                                               a_Lambda[g].dev_ptr(), mMetric.dev_ptr(),  
+                                                                              dev_BCForcing[g][4], dev_sg_str_x[g], dev_sg_str_y[g], m_ghost_points );
+	 else
+           freesurfcurvisg_dev<<<gridsize, blocksize, 0, m_cuobj->m_stream[st]>>>( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g],
+                                                                               m_global_nz[g], side, a_U[g].dev_ptr(), a_Mu[g].dev_ptr(),
+                                                                               a_Lambda[g].dev_ptr(), mMetric.dev_ptr(),  
+                                                                              dev_BCForcing[g][4], dev_sg_str_x[g], dev_sg_str_y[g], m_ghost_points );
+      }
+
+  }
+  if (m_topography_exists)
+  {
+    gridsize.z = 1;
+    blocksize.z = 1;
+    int g = mNumberOfCartesianGrids-1;
+    int gc = mNumberOfGrids-1; 
+    if( m_corder )
+      enforceCartTopo_dev_rev<<<gridsize, blocksize, 0, m_cuobj->m_stream[st]>>>(m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g],
+                             m_iStart[gc], m_iEnd[gc], m_jStart[gc], m_jEnd[gc], m_kStart[gc], m_kEnd[gc],  
+                             a_U[g].dev_ptr(), a_U[gc].dev_ptr(), m_ghost_points);
+   else
+      enforceCartTopo_dev<<<gridsize, blocksize, 0, m_cuobj->m_stream[st]>>>(m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g], 
+                          m_iStart[gc], m_iEnd[gc], m_jStart[gc], m_jEnd[gc], m_kStart[gc], m_kEnd[gc],  
+                          a_U[g].dev_ptr(), a_U[gc].dev_ptr(), m_ghost_points);
   }
 #endif
 }
