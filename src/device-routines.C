@@ -6578,6 +6578,38 @@ __global__ void HaloToBufferKernel_dev(float_sw4* block_left, float_sw4* block_r
 }
 
 //-----------------------------------------------------------------------
+__global__ void HaloToBufferKernel_dev_rev_v2(float_sw4* block_left, float_sw4* block_right, 
+                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, 
+                        int ni, int nj, int nk, int m_padding, int size, int nstep, const int m_neighbor_left ,const int  m_neighbor_right, const int mpi_process_null)
+{
+   int njk = nj*nk;
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = m_padding;
+   size_t npts = static_cast<size_t>(size);
+
+   if( m_neighbor_left !=  mpi_process_null)
+      for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+      {
+         idx = i/(n_m_padding);
+         j  = i - idx*n_m_padding;
+         istart = idx*nstep;
+         block_left[istart+j] = leftSideEdge[i];
+      }
+
+   if( m_neighbor_right !=  mpi_process_null)
+      for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+      {
+         idx = i/(n_m_padding);
+         j  = i - idx*n_m_padding;
+         istart = idx*nstep;
+         block_right[istart+j] = rightSideEdge[i];
+      }
+
+}
+//-----------------------------------------------------------------------
 __global__ void HaloToBufferKernel_dev_rev(float_sw4* block_left, float_sw4* block_right, float_sw4* block_up, float_sw4* block_down,
                         float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, float_sw4 * upSideEdge, float_sw4 * downSideEdge,
                         int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,const int  m_neighbor1, const int m_neighbor2,
@@ -6688,6 +6720,38 @@ __global__ void BufferToHaloKernel_dev(float_sw4* block_left, float_sw4* block_r
 
 }
 
+//-----------------------------------------------------------------------
+__global__ void BufferToHaloKernel_dev_rev_v2(float_sw4* block_left, float_sw4* block_right, 
+                float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
+                int ni, int nj, int nk, int m_padding, int size, int nstep, const int m_neighbor_left ,const int  m_neighbor_right, const int mpi_process_null )
+{
+   int njk = nj*nk;
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = m_padding;
+   size_t npts = static_cast<size_t>(size);
+
+   if( m_neighbor_left !=  mpi_process_null)
+   for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+   {
+        idx = i/(n_m_padding);
+        j  = i - idx*n_m_padding;
+        istart = idx*nstep;
+        leftSideEdge[i] = block_left[istart+j];
+   }
+
+   if( m_neighbor_right !=  mpi_process_null)
+   for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+   {
+        idx = i/(n_m_padding);
+        j  = i - idx*n_m_padding;
+        istart = idx*nstep;
+        rightSideEdge[i] = block_right[istart+j];
+   }
+
+}
 //-----------------------------------------------------------------------
 __global__ void BufferToHaloKernel_dev_rev(float_sw4* block_left, float_sw4* block_right, float_sw4* block_up, float_sw4* block_down,
                 float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, float_sw4 * upSideEdge, float_sw4 * downSideEdge,

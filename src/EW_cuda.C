@@ -195,6 +195,10 @@ __global__ void BufferToHaloKernel_dev_rev(float_sw4* block_left, float_sw4* blo
                         int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,const int  m_neighbor1, const int m_neighbor2,
                         const int m_neighbor3, const int mpi_process_null_cuda);
 
+__global__ void BufferToHaloKernel_dev_rev_v2(float_sw4* block_left, float_sw4* block_right,
+                float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
+                int ni, int nj, int nk, int m_padding, int size, int nstep, const int m_neighbor_left ,const int  m_neighbor_right, const int mpi_process_null );
+
 __global__ void HaloToBufferKernel_dev(float_sw4* block_left, float_sw4* block_right, float_sw4* block_up, float_sw4* block_down,
                         float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, float_sw4 * upSideEdge, float_sw4 * downSideEdge,
                         int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,const int  m_neighbor1, const int m_neighbor2,
@@ -204,6 +208,10 @@ __global__ void HaloToBufferKernel_dev_rev(float_sw4* block_left, float_sw4* blo
                         float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, float_sw4 * upSideEdge, float_sw4 * downSideEdge,
                         int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,const int  m_neighbor1, const int m_neighbor2,
                         const int m_neighbor3, const int mpi_process_null_cuda);
+
+__global__ void HaloToBufferKernel_dev_rev_v2(float_sw4* block_left, float_sw4* block_right,
+                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
+                        int ni, int nj, int nk, int m_padding, int size, int nstep, const int m_neighbor_left ,const int  m_neighbor_right, const int mpi_process_null);
 
 __global__ void bcfortsg_dev( int ib, int ie, int jb, int je, int kb, int ke, int* wind,
                               int nx, int ny, int nz, float_sw4* u, float_sw4 h, boundaryConditionType *bccnd,
@@ -940,11 +948,15 @@ void EW::init_point_sourcesCU( )
 void EW::setup_device_communication_array()
 {
 #ifdef SW4_CUDA
-  dev_SideEdge_Send.resize(mNumberOfGrids);
-  dev_SideEdge_Recv.resize(mNumberOfGrids);
+  dev_SideEdge_Send_X.resize(mNumberOfGrids);
+  dev_SideEdge_Recv_X.resize(mNumberOfGrids);
+  dev_SideEdge_Send_Y.resize(mNumberOfGrids);
+  dev_SideEdge_Recv_Y.resize(mNumberOfGrids);
 #ifndef SW4_CUDA_AWARE_MPI
-  m_SideEdge_Send.resize(mNumberOfGrids);
-  m_SideEdge_Recv.resize(mNumberOfGrids);
+  m_SideEdge_Send_X.resize(mNumberOfGrids);
+  m_SideEdge_Recv_X.resize(mNumberOfGrids);
+  m_SideEdge_Send_Y.resize(mNumberOfGrids);
+  m_SideEdge_Recv_Y.resize(mNumberOfGrids);
 #endif
 
   if( m_ndevice > 0 )
@@ -960,14 +972,24 @@ void EW::setup_device_communication_array()
         int n_m_ppadding1 = 3*nj*nk*m_ppadding;
         int n_m_ppadding2 = 3*ni*nk*m_ppadding;
 
-        retcode = cudaMalloc( (void**)&dev_SideEdge_Send[g], sizeof(float_sw4)*2*(n_m_ppadding1+n_m_ppadding2) );
+        retcode = cudaMalloc( (void**)&dev_SideEdge_Send_X[g], sizeof(float_sw4)*2*(n_m_ppadding1) );
         if( retcode != cudaSuccess )
-           cout << "Error, EW::setup_device_communication_arra cudaMalloc returned "
+           cout << "Error, EW::setup_device_communication_arra cudaMalloc dev_SideEdge_Send_X returned "
                 << cudaGetErrorString(retcode) << endl;
 
-        retcode = cudaMalloc( (void**)&dev_SideEdge_Recv[g], sizeof(float_sw4)*2*(n_m_ppadding1+n_m_ppadding2) );
+        retcode = cudaMalloc( (void**)&dev_SideEdge_Recv_X[g], sizeof(float_sw4)*2*(n_m_ppadding1) );
         if( retcode != cudaSuccess )
-           cout << "Error, EW::setup_device_communication_arra cudaMalloc returned "
+           cout << "Error, EW::setup_device_communication_arra cudaMalloc dev_SideEdge_Recv_X returned "
+                << cudaGetErrorString(retcode) << endl;
+
+        retcode = cudaMalloc( (void**)&dev_SideEdge_Send_Y[g], sizeof(float_sw4)*2*(n_m_ppadding2) );
+        if( retcode != cudaSuccess )
+           cout << "Error, EW::setup_device_communication_arra cudaMalloc dev_SideEdge_Send_Y returned "
+                << cudaGetErrorString(retcode) << endl;
+
+        retcode = cudaMalloc( (void**)&dev_SideEdge_Recv_Y[g], sizeof(float_sw4)*2*(n_m_ppadding2) );
+        if( retcode != cudaSuccess )
+           cout << "Error, EW::setup_device_communication_arra cudaMalloc dev_SideEdge_Recv_Y returned "
                 << cudaGetErrorString(retcode) << endl;
 
         //retcode = cudaMemset(dev_SideEdge_Send[g], 0.0, sizeof(float_sw4)*2*(n_m_ppadding1+n_m_ppadding2) );
@@ -983,14 +1005,24 @@ void EW::setup_device_communication_array()
 
 #ifndef SW4_CUDA_AWARE_MPI
 
-        retcode = cudaMallocHost( (void**)&m_SideEdge_Send[g], sizeof(float_sw4)*2*(n_m_ppadding1+n_m_ppadding2) );
+        retcode = cudaMallocHost( (void**)&m_SideEdge_Send_X[g], sizeof(float_sw4)*2*(n_m_ppadding1) );
         if( retcode != cudaSuccess )
-           cout << "Error, EW::setup_device_communication_arra cudaMallocHost returned "
+           cout << "Error, EW::setup_device_communication_arra m_SideEdge_Send_X cudaMallocHost returned "
                 << cudaGetErrorString(retcode) << endl;
 
-        retcode = cudaMallocHost( (void**)&m_SideEdge_Recv[g], sizeof(float_sw4)*2*(n_m_ppadding1+n_m_ppadding2) );
+        retcode = cudaMallocHost( (void**)&m_SideEdge_Recv_X[g], sizeof(float_sw4)*2*(n_m_ppadding1) );
         if( retcode != cudaSuccess )
-           cout << "Error, EW::setup_device_communication_arra cudaMallocHost returned "
+           cout << "Error, EW::setup_device_communication_arra m_SideEdge_Recv_X cudaMallocHost returned "
+                << cudaGetErrorString(retcode) << endl;
+
+        retcode = cudaMallocHost( (void**)&m_SideEdge_Send_Y[g], sizeof(float_sw4)*2*(n_m_ppadding2) );
+        if( retcode != cudaSuccess )
+           cout << "Error, EW::setup_device_communication_arra m_SideEdge_Send_Y cudaMallocHost returned "
+                << cudaGetErrorString(retcode) << endl;
+
+        retcode = cudaMallocHost( (void**)&m_SideEdge_Recv_Y[g], sizeof(float_sw4)*2*(n_m_ppadding2) );
+        if( retcode != cudaSuccess )
+           cout << "Error, EW::setup_device_communication_arra m_SideEdge_Recv_Y cudaMallocHost returned "
                 << cudaGetErrorString(retcode) << endl;
 
         //memset( m_SideEdge_Send[g], 0.0, sizeof(float_sw4)*2*(n_m_ppadding1+n_m_ppadding2) );
@@ -1029,8 +1061,8 @@ void EW::communicate_arrayCU( Sarray& u, int g , int st)
    int n_m_ppadding2 = 3*ni*nk*m_ppadding;
    int idx_left = 0;
    int idx_right = n_m_ppadding2;
-   int idx_up = 2*n_m_ppadding2;
-   int idx_down = 2*n_m_ppadding2 + n_m_ppadding1;
+   int idx_down = 0;
+   int idx_up = n_m_ppadding1;
    int n_m_ppadding_total = 2*(n_m_ppadding1+n_m_ppadding2);
 
    if( u.m_nc == 1 )
@@ -1062,62 +1094,53 @@ void EW::communicate_arrayCU( Sarray& u, int g , int st)
       int ytag1 = 347;
       int ytag2 = 348;
 
-
+/** X direction exchange **/
       if(m_corder)
-         BufferToHaloKernel_dev_rev<<<gridsize, blocksize>>>( &u(1,ib,jb+m_ppadding,kb,true), &u(1,ib,je-(2*m_ppadding-1),kb,true),
-                                                   &u(1,ie-(2*m_ppadding-1),jb,kb,true), &u(1,ib+m_ppadding,jb,kb,true),
-                                                   &dev_SideEdge_Send[g][idx_left], &dev_SideEdge_Send[g][idx_right],
-                                                   &dev_SideEdge_Send[g][idx_up], &dev_SideEdge_Send[g][idx_down],
-                    ni, nj, nk, m_ppadding, m_neighbor[0],  m_neighbor[1], m_neighbor[2], m_neighbor[3], MPI_PROC_NULL );
+         BufferToHaloKernel_dev_rev_v2<<<gridsize, blocksize>>>(&u(1,ib+m_ppadding,jb,kb,true),&u(1,ie-(2*m_ppadding-1),jb,kb,true),
+                                                   &dev_SideEdge_Send_X[g][idx_down], &dev_SideEdge_Send_X[g][idx_up],
+                    ni, nj, nk, m_ppadding, 3*nj*nk, ni, m_neighbor[0],  m_neighbor[1], MPI_PROC_NULL );
+//         BufferToHaloKernel_dev_rev<<<gridsize, blocksize>>>( &u(1,ib,jb+m_ppadding,kb,true), &u(1,ib,je-(2*m_ppadding-1),kb,true),
+//                                                   &u(1,ie-(2*m_ppadding-1),jb,kb,true), &u(1,ib+m_ppadding,jb,kb,true),
+//                                                   &dev_SideEdge_Send[g][idx_left], &dev_SideEdge_Send[g][idx_right],
+//                                                   &dev_SideEdge_Send[g][idx_up], &dev_SideEdge_Send[g][idx_down],
+//                    ni, nj, nk, m_ppadding, m_neighbor[0],  m_neighbor[1], m_neighbor[2], m_neighbor[3], MPI_PROC_NULL );
 
       else
-         BufferToHaloKernel_dev<<<gridsize, blocksize>>>( &u(1,ib,jb+m_ppadding,kb,true), &u(1,ib,je-(2*m_ppadding-1),kb,true),
-                                                   &u(1,ie-(2*m_ppadding-1),jb,kb,true), &u(1,ib+m_ppadding,jb,kb,true),
-                                                   &dev_SideEdge_Send[g][idx_left], &dev_SideEdge_Send[g][idx_right],
-                                                   &dev_SideEdge_Send[g][idx_up], &dev_SideEdge_Send[g][idx_down],
-                    ni, nj, nk, m_ppadding, m_neighbor[0],  m_neighbor[1], m_neighbor[2], m_neighbor[3], MPI_PROC_NULL );
+;
+//         BufferToHaloKernel_dev<<<gridsize, blocksize>>>( &u(1,ib,jb+m_ppadding,kb,true), &u(1,ib,je-(2*m_ppadding-1),kb,true),
+//                                                   &u(1,ie-(2*m_ppadding-1),jb,kb,true), &u(1,ib+m_ppadding,jb,kb,true),
+//                                                   &dev_SideEdge_Send[g][idx_left], &dev_SideEdge_Send[g][idx_right],
+//                                                   &dev_SideEdge_Send[g][idx_up], &dev_SideEdge_Send[g][idx_down],
+//                    ni, nj, nk, m_ppadding, m_neighbor[0],  m_neighbor[1], m_neighbor[2], m_neighbor[3], MPI_PROC_NULL );
 
       CheckCudaCall(cudaGetLastError(), "BufferToHaloKernel<<<,>>>(...)", __FILE__, __LINE__);
       SafeCudaCall(cudaStreamSynchronize(NULL));
 
 #ifdef SW4_CUDA_AWARE_MPI
 
-     MPI_Sendrecv(&dev_SideEdge_Send[g][idx_up], n_m_ppadding1, m_mpifloat, m_neighbor[1], xtag1, &dev_SideEdge_Recv[g][idx_down],
+     MPI_Sendrecv(&dev_SideEdge_Send_X[g][idx_up], n_m_ppadding1, m_mpifloat, m_neighbor[1], xtag1, &dev_SideEdge_Recv_X[g][idx_down],
                         n_m_ppadding1, m_mpifloat, m_neighbor[0], xtag1, m_cartesian_communicator, &status);
 
-     MPI_Sendrecv(&dev_SideEdge_Send[g][idx_down], n_m_ppadding1, m_mpifloat, m_neighbor[0], xtag2, &dev_SideEdge_Recv[g][idx_up],
+     MPI_Sendrecv(&dev_SideEdge_Send_X[g][idx_down], n_m_ppadding1, m_mpifloat, m_neighbor[0], xtag2, &dev_SideEdge_Recv_X[g][idx_up],
                         n_m_ppadding1, m_mpifloat, m_neighbor[1], xtag2, m_cartesian_communicator, &status);
-
-     MPI_Sendrecv(&dev_SideEdge_Send[g][idx_right], n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag2, &dev_SideEdge_Recv[g][idx_left],
-                        n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag2, m_cartesian_communicator, &status);
-
-     MPI_Sendrecv(&dev_SideEdge_Send[g][idx_left], n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag1, &dev_SideEdge_Recv[g][idx_right],
-                        n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag1, m_cartesian_communicator, &status);
 
 
 #else
 
-     retcode = cudaMemcpy(m_SideEdge_Send[g], dev_SideEdge_Send[g], n_m_ppadding_total*sizeof(float_sw4), cudaMemcpyDeviceToHost);
+     retcode = cudaMemcpy(m_SideEdge_Send_X[g], dev_SideEdge_Send_X[g], 2*n_m_ppadding1*sizeof(float_sw4), cudaMemcpyDeviceToHost);
      if( retcode != cudaSuccess )
      {
         cout << "Error cmmunicate_array cudaMemcpy returned (DeviceToHost) " << cudaGetErrorString(retcode) << endl;
         exit(1);
      }
 
-     MPI_Sendrecv(&m_SideEdge_Send[g][idx_left], n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag1, &m_SideEdge_Recv[g][idx_right],
-                         n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag1, m_cartesian_communicator, &status);
-
-     MPI_Sendrecv(&m_SideEdge_Send[g][idx_right], n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag2, &m_SideEdge_Recv[g][idx_left],
-                        n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag2, m_cartesian_communicator, &status);
-
-     MPI_Sendrecv(&m_SideEdge_Send[g][idx_up], n_m_ppadding1, m_mpifloat, m_neighbor[1], xtag1, &m_SideEdge_Recv[g][idx_down],
+     MPI_Sendrecv(&m_SideEdge_Send_X[g][idx_up], n_m_ppadding1, m_mpifloat, m_neighbor[1], xtag1, &m_SideEdge_Recv_X[g][idx_down],
                         n_m_ppadding1, m_mpifloat, m_neighbor[0], xtag1, m_cartesian_communicator, &status);
 
-     MPI_Sendrecv(&m_SideEdge_Send[g][idx_down], n_m_ppadding1, m_mpifloat, m_neighbor[0], xtag2, &m_SideEdge_Recv[g][idx_up],
+     MPI_Sendrecv(&m_SideEdge_Send_X[g][idx_down], n_m_ppadding1, m_mpifloat, m_neighbor[0], xtag2, &m_SideEdge_Recv_X[g][idx_up],
                         n_m_ppadding1, m_mpifloat, m_neighbor[1], xtag2, m_cartesian_communicator, &status);
 
-
-     retcode = cudaMemcpy(dev_SideEdge_Recv[g], m_SideEdge_Recv[g], n_m_ppadding_total*sizeof(float_sw4), cudaMemcpyHostToDevice);
+     retcode = cudaMemcpy(dev_SideEdge_Recv_X[g], m_SideEdge_Recv_X[g], 2*n_m_ppadding1*sizeof(float_sw4), cudaMemcpyHostToDevice);
      if( retcode != cudaSuccess )
      {
         cout << "Error cmmunicate_array cudaMemcpy returned (Host2Device) " << cudaGetErrorString(retcode) << endl;
@@ -1127,18 +1150,77 @@ void EW::communicate_arrayCU( Sarray& u, int g , int st)
 #endif
 
      if(m_corder)
-        HaloToBufferKernel_dev_rev<<<gridsize, blocksize>>>( &u(1,ib,jb,kb,true), &u(1,ib,je-(m_ppadding-1),kb,true),
-                                                  &u(1,ie-(m_ppadding-1),jb,kb,true), &u(1,ib,jb,kb,true),
-                                                  &dev_SideEdge_Recv[g][idx_left], &dev_SideEdge_Recv[g][idx_right],
-                                                  &dev_SideEdge_Recv[g][idx_up], &dev_SideEdge_Recv[g][idx_down], ni, nj, nk, m_ppadding,
-                                     m_neighbor[0],  m_neighbor[1], m_neighbor[2], m_neighbor[3], MPI_PROC_NULL );
+        HaloToBufferKernel_dev_rev_v2<<<gridsize, blocksize>>>(&u(1,ib,jb,kb,true),&u(1,ie-(m_ppadding-1),jb,kb,true),
+                                                  &dev_SideEdge_Recv_X[g][idx_down], &dev_SideEdge_Recv_X[g][idx_up], ni, nj, nk, m_ppadding,
+                                                  3*nj*nk, ni, m_neighbor[0],  m_neighbor[1], MPI_PROC_NULL );
+//        HaloToBufferKernel_dev_rev<<<gridsize, blocksize>>>( &u(1,ib,jb,kb,true), &u(1,ib,je-(m_ppadding-1),kb,true),
+//                                                  &u(1,ie-(m_ppadding-1),jb,kb,true), &u(1,ib,jb,kb,true),
+//                                                  &dev_SideEdge_Recv[g][idx_left], &dev_SideEdge_Recv[g][idx_right],
+//                                                  &dev_SideEdge_Recv[g][idx_up], &dev_SideEdge_Recv[g][idx_down], ni, nj, nk, m_ppadding,
+//                                     m_neighbor[0],  m_neighbor[1], m_neighbor[2], m_neighbor[3], MPI_PROC_NULL );
 
      else
-        HaloToBufferKernel_dev<<<gridsize, blocksize>>>( &u(1,ib,jb,kb,true), &u(1,ib,je-(m_ppadding-1),kb,true),
-                                                  &u(1,ie-(m_ppadding-1),jb,kb,true), &u(1,ib,jb,kb,true),
-                                                  &dev_SideEdge_Recv[g][idx_left], &dev_SideEdge_Recv[g][idx_right],
-                                                  &dev_SideEdge_Recv[g][idx_up], &dev_SideEdge_Recv[g][idx_down], ni, nj, nk, m_ppadding,
-                                     m_neighbor[0],  m_neighbor[1], m_neighbor[2], m_neighbor[3], MPI_PROC_NULL );
+;
+//        HaloToBufferKernel_dev<<<gridsize, blocksize>>>( &u(1,ib,jb,kb,true), &u(1,ib,je-(m_ppadding-1),kb,true),
+//                                                  &u(1,ie-(m_ppadding-1),jb,kb,true), &u(1,ib,jb,kb,true),
+//                                                  &dev_SideEdge_Recv[g][idx_left], &dev_SideEdge_Recv[g][idx_right],
+//                                                  &dev_SideEdge_Recv[g][idx_up], &dev_SideEdge_Recv[g][idx_down], ni, nj, nk, m_ppadding,
+//                                     m_neighbor[0],  m_neighbor[1], m_neighbor[2], m_neighbor[3], MPI_PROC_NULL );
+
+
+     CheckCudaCall(cudaGetLastError(), "HaloToBufferKernel<<<,>>>(...)", __FILE__, __LINE__);
+     SafeCudaCall(cudaStreamSynchronize(NULL));
+
+/** Y direction exchange **/
+      if(m_corder)
+         BufferToHaloKernel_dev_rev_v2<<<gridsize, blocksize>>>(&u(1,ib,jb+m_ppadding,kb,true), &u(1,ib,je-(2*m_ppadding-1),kb,true),
+                                                   &dev_SideEdge_Send_Y[g][idx_left], &dev_SideEdge_Send_Y[g][idx_right],
+                    ni, nj, nk, m_ppadding*ni, 3*nk, ni*nj, m_neighbor[2],  m_neighbor[3], MPI_PROC_NULL );
+
+      else
+;
+
+      CheckCudaCall(cudaGetLastError(), "BufferToHaloKernel<<<,>>>(...)", __FILE__, __LINE__);
+      SafeCudaCall(cudaStreamSynchronize(NULL));
+
+#ifdef SW4_CUDA_AWARE_MPI
+     MPI_Sendrecv(&dev_SideEdge_Send_Y[g][idx_right], n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag2, &dev_SideEdge_Recv[g][idx_left],
+                        n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag2, m_cartesian_communicator, &status);
+
+     MPI_Sendrecv(&dev_SideEdge_Send_Y[g][idx_left], n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag1, &dev_SideEdge_Recv[g][idx_right],
+                        n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag1, m_cartesian_communicator, &status);
+
+#else
+
+     retcode = cudaMemcpy(m_SideEdge_Send_Y[g], dev_SideEdge_Send_Y[g], 2*n_m_ppadding2*sizeof(float_sw4), cudaMemcpyDeviceToHost);
+     if( retcode != cudaSuccess )
+     {
+        cout << "Error cmmunicate_array cudaMemcpy returned (DeviceToHost) " << cudaGetErrorString(retcode) << endl;
+        exit(1);
+     }
+
+     MPI_Sendrecv(&m_SideEdge_Send_Y[g][idx_right], n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag2, &m_SideEdge_Recv_Y[g][idx_left],
+                        n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag2, m_cartesian_communicator, &status);
+
+     MPI_Sendrecv(&m_SideEdge_Send_Y[g][idx_left], n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag1, &m_SideEdge_Recv_Y[g][idx_right],
+                         n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag1, m_cartesian_communicator, &status);
+
+
+     retcode = cudaMemcpy(dev_SideEdge_Recv_Y[g], m_SideEdge_Recv_Y[g], 2*n_m_ppadding2*sizeof(float_sw4), cudaMemcpyHostToDevice);
+     if( retcode != cudaSuccess )
+     {
+        cout << "Error cmmunicate_array cudaMemcpy returned (Host2Device) " << cudaGetErrorString(retcode) << endl;
+        exit(1);
+     }
+
+#endif
+
+     if(m_corder)
+        HaloToBufferKernel_dev_rev_v2<<<gridsize, blocksize>>>(&u(1,ib,jb,kb,true), &u(1,ib,je-(m_ppadding-1),kb,true),
+                                                  &dev_SideEdge_Recv_Y[g][idx_left], &dev_SideEdge_Recv_Y[g][idx_right], ni, nj, nk, m_ppadding*ni,
+                                                  3*nk, ni*nj, m_neighbor[2],  m_neighbor[3], MPI_PROC_NULL );
+     else
+;
 
 
      CheckCudaCall(cudaGetLastError(), "HaloToBufferKernel<<<,>>>(...)", __FILE__, __LINE__);
