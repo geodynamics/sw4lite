@@ -227,6 +227,9 @@ FMODS = type_defs.mod
 ifneq ($(ckernel),yes)
   OBJ += $(FOROBJ)
 endif
+ifeq ($(findstring ray,$(HOSTNAME)),ray)
+   IBMF77FLAG = -qfixed
+endif
 
 # prefix object files with build directory
 FOBJ = $(addprefix $(builddir)/,$(OBJ))
@@ -259,7 +262,7 @@ $(builddir)/%.o:src/%.c
 
 $(builddir)/%.o:src/%.f
 	/bin/mkdir -p $(builddir)
-	cd $(builddir); $(FC) $(FFLAGS) -c ../$< 
+	cd $(builddir); $(FC) $(FFLAGS) $(IBMF77FLAG) -c ../$< 
 
 $(builddir)/%.o:src/%.f90
 	/bin/mkdir -p $(builddir)
