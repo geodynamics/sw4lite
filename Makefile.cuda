@@ -5,7 +5,7 @@ ifeq ($(findstring ray,$(HOSTNAME)),ray)
    HOSTCOMP = mpicxx
    MPIPATH = /opt/ibm/spectrum_mpi
    gpuarch := sm_60
-   EXTRA_LINK_FLAGS = -lmpi_ibm
+   EXTRA_LINK_FLAGS = -lmpi_ibm -L/usr/tcetmp/packages/lapack/lapack-3.6.0-gfortran-4.8.5/lib -llapack -L/usr/tcetmp/packages/blas/blas-3.6.0-gfortran-4.8.5/lib -lblas -lgfortran
    debugdir := debug_cuda_ray
    optdir   := optimize_cuda_ray
 else ifeq ($(findstring surface,$(HOSTNAME)),surface)
