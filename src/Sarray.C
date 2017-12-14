@@ -1141,7 +1141,9 @@ double *Sarray::newmanaged(size_t len){
    //std::cout<<"******Using overloaded new**********\n";
    //cudaMallocManaged(&ptr, len*sizeof(double),cudaMemAttachHost);
 #ifdef CUDA_CODE
-   cudaMallocManaged(&ptr, len*sizeof(double),cudaMemAttachGlobal);
+   cudaError_t retcode = cudaMallocManaged(&ptr, len*sizeof(double),cudaMemAttachGlobal);
+   if( retcode != cudaSuccess )
+      cout << "Error creating Managed Sarray on device. retval = " << cudaGetErrorString(retcode) << endl;
    map[ptr]=len*sizeof(double);
    cudaDeviceSynchronize();
    managed=true;

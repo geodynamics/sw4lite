@@ -3143,6 +3143,8 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
   }
 #endif
   // Need the lines below becuase the object is not in managed memory and the this pointer is host only
+  if(m_identsources.size() > 1)
+  {
   float_sw4 *ForceVector_copy=ForceVector;
   float_sw4 **ForceAddress_copy=ForceAddress;
   PREFETCH(ForceVector);
@@ -3154,7 +3156,7 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
       for(int i=0;i<3;i++)
 	*ForceAddress_copy[index+i]+=ForceVector_copy[index+i]; // DOes this need to be an update and not an assignment
     });
-	  
+  }	  
 }
 
 //---------------------------------------------------------------------------
@@ -3353,8 +3355,8 @@ void EW::evalRHS(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_L
 void EW::communicate_array( Sarray& u, int grid )
 {
   //std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  communicate_array_async(u,grid);
-  //communicate_array_org(u,grid);
+  //communicate_array_async(u,grid);
+  communicate_array_org(u,grid);
   // Use _async for the faster CUDA version
   //std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
@@ -6815,10 +6817,15 @@ void EW::sort_grid_point_sources()
    int nrunique = m_identsources.size()-1;
 
 #ifdef CUDA_CODE
+   if(nrunique > 0 ) 
+   {
    ForceVector = newmanaged(nrunique*3);
-   cudaMallocManaged(&ForceAddress, 3*nrunique*sizeof(float_sw4*));
+   cudaError_t retcode = cudaMallocManaged((void**)&ForceAddress, 3*nrunique*sizeof(float_sw4*));
+   if( retcode != cudaSuccess )
+      cout << "Error creating Managed ForceAddress array on device. retval = " << cudaGetErrorString(retcode) << endl;
    map[ForceAddress]= 3*nrunique*sizeof(float_sw4*);
    cudaDeviceSynchronize();
+   }
 #else
    ForceVector = new double[nrunique*3];
    ForceAddress= new float_sw4*[nrunique*3];
@@ -6876,11 +6883,13 @@ void EW::copy_point_sources_to_gpu()
 #endif
 }
 float_sw4* EW::newmanaged(size_t len){
-   void *ptr;
+   float_sw4 *ptr;
    //std::cout<<"******Using overloaded new**********\n";
    //cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachHost);
 #ifdef CUDA_CODE
-   cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachGlobal);
+   cudaError_t retcode = cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachGlobal);
+   if( retcode != cudaSuccess )
+      cout << "Error creating Managed array newmanaged on device. retval = " << cudaGetErrorString(retcode) << endl;
    map[ptr]=len*sizeof(float_sw4);
    prefetched[ptr]=false;
    cudaDeviceSynchronize();
@@ -6892,7 +6901,7 @@ float_sw4* EW::newmanaged(size_t len){
    ptr=new double[len];
 #endif
 #endif
-   return (float_sw4*)ptr;
+   return ptr;
 }
 float_sw4* EW::newmanagedh(size_t len){
    void *ptr;
