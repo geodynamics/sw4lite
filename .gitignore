@@ -13,9 +13,15 @@ build/
 
 optimize/
 
+optimize_cuda_surface/
+
 debug/
+
+debug_cuda_surface/
 
 *.o
 
 *.make
 
+# emacs autosave files
+*~
