@@ -114,6 +114,7 @@ extern "C" {
 extern "C" 
 {
    void F77_FUNC(dspev,DSPEV)(char & JOBZ, char & UPLO, int & N, double *AP, double *W, double *Z, int & LDZ, double *WORK, int & INFO);
+   //   void dspev_(char & JOBZ, char & UPLO, int & N, double *AP, double *W, double *Z, int & LDZ, double *WORK, int & INFO);
 }
 void rhs4sg_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
 	     int nk, int* onesided, const float_sw4* a_acof, const float_sw4* a_bope, const float_sw4* a_ghcof,
@@ -5496,6 +5497,7 @@ void EW::computeDT()
 			+ SQR(mMetric(2,i,j,k))*mu + SQR(mMetric(3,i,j,k))*mu + SQR(mMetric(4,i,j,k))*la2mu)*jinv;
 // calculate eigenvalues of symmetric matrix
 #ifndef SW4_CUDA
+	       //	       dspev_(JOBZ, UPLO, N, Amat, W, Z, LDZ, WORK, INFO);
 	       F77_FUNC(dspev,DSPEV)(JOBZ, UPLO, N, Amat, W, Z, LDZ, WORK, INFO);
 #endif
 	       if (INFO != 0)

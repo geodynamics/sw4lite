@@ -37,27 +37,24 @@ else ifeq ($(findstring quartz,$(HOSTNAME)),quartz)
   RAJA_LOCATION=/g/g92/lin32/RAJA-Quartz/install_tree
   OMPOPT = -fopenmp -std=c++11 -O3 -qoverride-limits 
   MKL_PATH = /usr/tce/packages/mkl/mkl-11.3.3/lib
-  EXTRA_CXX_FLAGS = -xCORE-AVX2 -I $(RAJA_LOCATION)/include -DRAJA_ENABLE_NESTED 
+  EXTRA_CXX_FLAGS  = -xCORE-AVX2 -I $(RAJA_LOCATION)/include -DRAJA_ENABLE_NESTED 
   EXTRA_FORT_FLAGS = -xCORE-AVX2
-  EXTRA_LINK_FLAGS = -O3 -fopenmp -Wl,-rpath=$(SW4ROOT)/lib -Wl,-rpath=${MKL_PATH} -L${MKL_PATH} -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -lifcore -L $(RAJA_LOCATION)/lib  -lRAJA
+  EXTRA_LINK_FLAGS = -O3 -fopenmp -Wl,-rpath=$(SW4ROOT)/lib -Wl,-rpath=${MKL_PATH} -L${MKL_PATH} -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -lifcore -L$(RAJA_LOCATION)/lib  -lRAJA
   openmp = yes
   LINKER = mpicxx
   computername := quartz
 else ifeq ($(findstring ray,$(HOSTNAME)),ray)
-  FC = mpif90
-  CXX = nvcc
-  RAJA_LOCATION =  /g/g92/lin32/RAJA-Ray/RAJA-cuda-install
-#  RAJA_LOCATION = /usr/workspace/wsb/ramesh/Quartz/Project6/sw4/sw4lite/tests/topo/ALLINEA/RAJA/RAJA/install-cuda
-  REG_CHECK = -cubin -Xptxas="-v" --maxrregcount=32 
-  #OPT = -DRAJA03 -O3 -ccbin mpixlC -Xcompiler="-qsmp=omp -qmaxmem=-1" -std=c++11 --expt-extended-lambda -restrict -arch=sm_60 -I $(CUDA_INCLUDES) -I $(RAJA_LOCATION)/include  --x cu -DUSE_NVTX -DRAJA_USE_CUDA -DSW4_CROUTINES -DRAJA_USE_RESTRICT_PTR -DCUDA_CODE
-  OPT = -O3 -ccbin mpicxx -Xcompiler="" -std=c++11 --expt-extended-lambda -restrict -arch=sm_60 -I $(CUDA_INCLUDES) -I $(RAJA_LOCATION)/include  --x cu -DUSE_NVTX -DRAJA_USE_CUDA -DSW4_CROUTINES -DRAJA_USE_RESTRICT_PTR -DCUDA_CODE -DRAJA_ENABLE_NESTED
-  OMPOPT =
-  #EXTRA_LINK_FLAGS = -qsmp=omp -L /usr/tcetmp/packages/xl/xl-beta-2017.03.28/xlf/16.1.0/lib/ -L /usr/tcetmp/packages/blas/blas-3.6.0-xlf-15.1.5/lib -L /usr/tcetmp/packages/lapack/lapack-3.6.0-xlf-15.1.5/lib/ -lxlf90 -llapack -lblas  -L /usr/local/cuda/lib64 -lcudart -lnvToolsExt -lcuda
-   EXTRA_LINK_FLAGS = -lmpi_ibm -L/usr/tcetmp/packages/lapack/lapack-3.6.0-gfortran-4.8.5/lib -llapack -L/usr/tcetmp/packages/blas/blas-3.6.0-gfortran-4.8.5/lib -lblas -lgfortran -lcudart -L $(CUDA_LIBS)  -lnvToolsExt
-#EXTRA_LINK_FLAGS = -L /usr/tcetmp/packages/blas/blas-3.6.0-gfortran-4.8.5/lib/ -L /usr/tcetmp/packages/lapack/lapack-3.6.0-gfortran-4.8.5/lib/ -llapack -lblas -lm -lgfortran  -L /usr/local/cuda/lib64 -lcudart -lnvToolsExt -lcuda
-  LINKER = mpicxx
- LINKFLAGS =
-  computername := ray
+   FC  = mpif90
+   CXX = nvcc
+   RAJA_LOCATION = 
+   CUDA_LIBS = /usr/tce/packages/cuda/cuda-9.0.176/lib64
+   OPT = -O3 -ccbin mpicxx -Xcompiler="" -std=c++11 --expt-extended-lambda -restrict -arch=sm_60 -I$(RAJA_LOCATION)/include  --x cu -DUSE_NVTX -DRAJA_USE_CUDA -DSW4_CROUTINES -DRAJA_USE_RESTRICT_PTR -DCUDA_CODE -DRAJA_ENABLE_NESTED
+# Gnu blas/lapack libraries:
+#   EXTRA_LINK_FLAGS = -lmpi_ibm -L/usr/tcetmp/packages/lapack/lapack-3.6.0-gfortran-4.8.5/lib -llapack -L/usr/tcetmp/packages/blas/blas-3.6.0-gfortran-4.8.5/lib -lblas -lgfortran -lcudart -L$(CUDA_LIBS) -lnvToolsExt 
+# xlf blas/lapack libraries:
+   EXTRA_LINK_FLAGS = -lmpi_ibm -L/usr/tcetmp/packages/lapack/lapack-3.6.0-xlf-15.1.5/lib -llapack -L/usr/tcetmp/packages/blas/blas-3.6.0-xlf-15.1.5/lib -lblas -lcudart -L$(CUDA_LIBS) -lnvToolsExt /usr/tce/packages/xl/xl-beta-2017.11.28/lib/libxlf90.so.1 /usr/tce/packages/xl/xl-beta-2017.11.28/lib/libxlfmath.so.1
+   LINKER = mpicxx
+   computername := ray
 # LC cab is a large cluster of Intel Xeon nodes
 else ifeq ($(findstring cab,$(HOSTNAME)),cab)
 # assumes: use ic_16.0.210, use mvapich2-intel-2.1
@@ -221,7 +218,7 @@ ifeq ($(ckernel),yes)
 		debugdir:= debug_mp_c_raja
 		optdir:= optimize_mp_c_raja
 		CXXFLAGS += -std=c++11 -I $(RAJA_LOCATION)/include  -DSW4_CROUTINES 
-		EXTRA_LINK_FLAGS += -qopenmp -L $(RAJA_LOCATION)/lib -lRAJA 
+		EXTRA_LINK_FLAGS += -qopenmp -L$(RAJA_LOCATION)/lib -lRAJA 
 	else	
 		debugdir := debug_mp_c
 		optdir   := optimize_mp_c
@@ -231,7 +228,7 @@ ifeq ($(ckernel),yes)
 		debugdir:= debug_c_raja
 		optdir:= optimize_c_raja
 		CXXFLAGS += -I $(RAJA_LOCATION)/include  -DSW4_CROUTINES 
-		EXTRA_LINK_FLAGS += -L $(RAJA_LOCATION)/lib -lRAJA 
+		EXTRA_LINK_FLAGS += -L$(RAJA_LOCATION)/lib -lRAJA 
 	else	
 		debugdir := debug_mp_c
 		optdir   := optimize_mp_c
