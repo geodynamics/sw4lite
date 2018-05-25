@@ -300,6 +300,20 @@ class EW
    void copy_point_sources_to_gpu();
    void init_point_sourcesCU();
 
+// Merged functions  for rhs4 and corrector, predictor
+   void RHSPredCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
+                                 vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                                 vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+   void RHSPredCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
+                         vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                         vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+   void RHSCorrCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                                 vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                                 vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+   void RHSCorrCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                         vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                         vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+ 
    // DG stuff
    int m_qu;
    int m_qv; 

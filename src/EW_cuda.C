@@ -33,6 +33,8 @@
    
 #include "EWCuda.h"
 
+#include "device-routines.h"
+
 #ifdef SW4_CUDA
 
 // IBM Comment: Uncomment following macro to check kernel error
@@ -1450,4 +1452,170 @@ void EW::copy_bndrywindow_arrays_to_device()
   }
 #endif
 }
+
+// New functions from Guillaume. 
+
+//---------------------------------------------------------------------------
+void EW::RHSPredCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
+                          vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                          vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st) {
+#ifdef SW4_CUDA
+  int ni, nj, nk, startk;
+
+  for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
+    {
+      // Cube leading dimensions
+      ni = m_iEnd[g] - m_iStart[g] + 1;
+      nj = m_jEnd[g] - m_jStart[g] + 1;
+      nk = m_kEnd[g] - m_kStart[g] + 1;
+      
+      // If there's a free surface, start at k=8 instead of 2,
+      // the free surface will compute k=[2:7]
+      if( m_onesided[g][4] )
+        startk = 8;
+      else
+        startk = 2;
+
+      // RHS and predictor in center
+      rhs4_pred_gpu (2, ni-3, 2, nj-3, startk, nk-3,
+                     ni, nj, nk,
+                     a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
+                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+
+      CHECK_ERROR("RHS4_Predictor_rest")
+    }  
+#endif
+}  
+
+//---------------------------------------------------------------------------
+void EW::RHSPredCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
+                                  vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                                  vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st) {
+#ifdef SW4_CUDA
+  int ni, nj, nk, startk;
+
+  for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
+    {
+      // Cube leading dimensions
+      ni = m_iEnd[g] - m_iStart[g] + 1;
+      nj = m_jEnd[g] - m_jStart[g] + 1;
+      nk = m_kEnd[g] - m_kStart[g] + 1;
+      
+      // If we have a free surface, the other kernels start at k=8 instead of 2,
+      // the free surface will compute k=[2:7]
+//      if( m_onesided[g][4] )
+//        startk = 8;
+//      else
+//        startk = 2;
+//
+//      // RHS and predictor in the X halos
+//      rhs4_X_pred_gpu (2, ni-3, 4, nj-5, startk, nk-3,
+//                       ni, nj, nk,
+//                       a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
+//                       a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+//                       dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+//                       mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+//		   
+//      // RHS and predictor in the Y halos
+//      rhs4_Y_pred_gpu (2, ni-3, 2, nj-3, startk, nk-3,
+//                       ni, nj, nk,
+//                       a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
+//                       a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+//                       dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+//                       mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+  
+      // Free surface and predictor
+      if( m_onesided[g][4] )
+        rhs4upper_pred_gpu (2, ni-3, 2, nj-3,
+                            ni, nj, nk,
+                            a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
+                            a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                            dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                            mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+
+      CHECK_ERROR("RHS4_Predictor_boundary")
+    }  
+#endif
+}  
+//---------------------------------------------------------------------------
+void EW::RHSCorrCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                         vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                         vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st) {
+#ifdef SW4_CUDA
+  int ni, nj, nk, startk;
+
+  for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
+    {
+      // Cube leading dimensions
+      ni = m_iEnd[g] - m_iStart[g] + 1;
+      nj = m_jEnd[g] - m_jStart[g] + 1;
+      nk = m_kEnd[g] - m_kStart[g] + 1;
+      
+      // If we have a free surface, the other kernels start at k=8 instead of 2,
+      // the free surface will compute k=[2:7]
+      if( m_onesided[g][4] )
+        startk = 8;
+      else
+        startk = 2;
+  
+      // RHS and corrector in the rest of the cube
+      rhs4_corr_gpu (2, ni-3, 2, nj-3, startk, nk-3,
+                     ni, nj, nk,
+                     a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
+                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+      CHECK_ERROR("RHS4_Corrector_boundary")
+    }  
+#endif
+}  
+
+//---------------------------------------------------------------------------
+void EW::RHSCorrCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                         vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                         vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st) {
+#ifdef SW4_CUDA
+  int ni, nj, nk, startk;
+
+  for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
+    {
+      // Cube leading dimensions
+      ni = m_iEnd[g] - m_iStart[g] + 1;
+      nj = m_jEnd[g] - m_jStart[g] + 1;
+      nk = m_kEnd[g] - m_kStart[g] + 1;
+      
+//      // If we have a free surface, the other kernels start at k=8 instead of 2,
+//      // the free surface will compute k=[2:7]
+//      if( m_onesided[g][4] )
+//        startk = 8;
+//      else
+//        startk = 2;
+//  
+//      rhs4_X_corr_gpu (2, ni-3, 4, nj-5, startk, nk-3,
+//                     ni, nj, nk,
+//                     a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
+//                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+//                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+//                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+//      rhs4_Y_corr_gpu (2, ni-3, 2, nj-3, startk, nk-3,
+//                     ni, nj, nk,
+//                     a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
+//                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+//                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+//                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+      // Free surface and corrector
+      if( m_onesided[g][4] )
+        rhs4upper_corr_gpu (2, ni-3, 2, nj-3,
+                            ni, nj, nk,
+                            a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
+                            a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                            dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                            mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+
+      CHECK_ERROR("RHS4_Corrector_boundary")
+    }  
+#endif
+}  
 

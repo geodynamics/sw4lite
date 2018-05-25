@@ -2533,7 +2533,12 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
 // evaluate right hand side
       if( m_cuobj->has_gpu() )
-	 evalRHSCU( U, mMu, mLambda, Lu, 0 ); // save Lu in composite grid 'Lu'
+      {
+//	 evalRHSCU( U, mMu, mLambda, Lu, 0 ); // save Lu in composite grid 'Lu'
+        // RHS + predictor in the rest (stream 0)
+        RHSPredCU_upper_boundary (Up, U, Um, mMu, mLambda, mRho, F, 0);
+        RHSPredCU_center (Up, U, Um, mMu, mLambda, mRho, F, 0);
+      }
       else
 	 evalRHS( U, mMu, mLambda, Lu ); // save Lu in composite grid 'Lu'
 
@@ -2546,9 +2551,9 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
 // take predictor step, store in Up
       m_cuobj->sync_stream( 0 );
-      if( m_cuobj->has_gpu() )
-	 evalPredictorCU( Up, U, Um, mRho, Lu, F, 1 );    
-      else
+      if( ! m_cuobj->has_gpu() )
+//	 evalPredictorCU( Up, U, Um, mRho, Lu, F, 1 );    
+//      else
 	 evalPredictor( Up, U, Um, mRho, Lu, F );    
 
       //      if( !(m_cuobj->has_gpu()) )
@@ -2616,7 +2621,11 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	 check_for_nan( Uacc, 1, "uacc " );
 #endif
       if( m_cuobj->has_gpu() )
-	 evalRHSCU( Uacc, mMu, mLambda, Lu, 0 );
+      {
+//	 evalRHSCU( Uacc, mMu, mLambda, Lu, 0 );
+         RHSCorrCU_upper_boundary (Up, Uacc, mMu, mLambda, mRho, F, 0);
+         RHSCorrCU_center (Up, Uacc, mMu, mLambda, mRho, F, 0);
+      }
       else
        	 evalRHS( Uacc, mMu, mLambda, Lu );
 
@@ -2628,9 +2637,9 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 #endif
 
       m_cuobj->sync_stream(0);
-      if( m_cuobj->has_gpu() )
-	 evalCorrectorCU( Up, mRho, Lu, F, 1 );
-      else
+      if( !m_cuobj->has_gpu() )
+//	 evalCorrectorCU( Up, mRho, Lu, F, 1 );
+//      else
 	 evalCorrector( Up, mRho, Lu, F );
       //      time_measure[5] = MPI_Wtime();
       time_measure[6] = MPI_Wtime();
