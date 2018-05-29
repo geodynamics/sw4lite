@@ -10614,10 +10614,11 @@ void rhs4_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, in
 // Launch UXx2x6 = 192 threads to compute the first 6 plans in the Z dimension.
 // Strategy : Load the first 10 depth plans of U, lambda, mu in shared memory,
 // and compute 6 output plans.
-
+// low specifies low-K boundary, otherwise for high-K boundary
+ 
 template <bool c_order, bool pred, bool low>
 __launch_bounds__ (UX*12)
-__global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
+__global__ void rhs4_Kboundary (int ifirst, int ilast, int jfirst, int jlast,
 			   int ni, int nj, int nk, int nz,
 			   float_sw4* __restrict__ a_up,
 			   const float_sw4* __restrict__ a_u,
@@ -10654,7 +10655,12 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
   // i starts at 0, j starts at jfirst, k starts at 0.
   const int i = threadIdx.x + blockIdx.x * UX;
   const int j = jfirst + threadIdx.y + blockIdx.y * 2;
-  const int k = threadIdx.z;
+  int k;
+
+  if(low)
+    k = threadIdx.z;
+  else
+    k = nz-6; // (nz-5) - (-1) - 2
   
   const int ti = threadIdx.x + 2;
   const int tj = threadIdx.y + 2;
@@ -10679,11 +10685,21 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
   if (j+2 < nj)
     loady3 = 1;
 
-  index = 1 * nij + j * ni + i;
   float_sw4 u0, u1, u2;
-  u0 = u(0,index);
-  u1 = u(1,index);
-  u2 = u(2,index);
+  if(low)
+  {
+    index = 1 * nij + j * ni + i;
+    u0 = u(0,index);
+    u1 = u(1,index);
+    u2 = u(2,index);
+  }
+  else
+  {
+    index = (nz+1) * nij + j * ni + i;
+    u0 = u(0,index);
+    u1 = u(1,index);
+    u2 = u(2,index);
+  }
   // Loading index starts at (i-2,j-2,k)
   index = (k + 2) * nij + (j - 2) * ni + i - 2;
 
@@ -10855,22 +10871,27 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
     mu2zz = 0;
     mu3zz = 0;
     for (int q=0; q<8; q++) {
+      int qi = (low)? q: (7-q);
       float_sw4 lap2mu = 0;
       float_sw4 mucof  = 0;
       int idx = q * 6 + k;
       for (int m=0 ; m<8; m++) {
-	mucof  += dev_acof[idx] * shm[m][tj][ti];
-	lap2mu += dev_acof[idx] * (shl[m][tj][ti] + 2 * shm[m][tj][ti]);
+        int mi = (low)? m: (7-m);
+	mucof  += dev_acof[idx] * shm[mi][tj][ti];
+	lap2mu += dev_acof[idx] * (shl[mi][tj][ti] + 2 * shm[mi][tj][ti]);
 	idx += 48;
       }
-      mu1zz += mucof * shu[0][q][tj][ti];
-      mu2zz += mucof * shu[1][q][tj][ti];
-      mu3zz += lap2mu * shu[2][q][tj][ti];
+      mu1zz += mucof * shu[0][qi][tj][ti];
+      mu2zz += mucof * shu[1][qi][tj][ti];
+      mu3zz += lap2mu * shu[2][qi][tj][ti];
     }
 
     /* ghost point only influences the first point (k=1) because ghcof(k)=0 for k>=2*/
     //r1 += mu1zz + dev_ghcof[k] * shm[2][tj][ti] * shu[0][1][tj][ti];
-    r1 += mu1zz + dev_ghcof[k] * shm[2][tj][ti] * u0; 
+    if(low)
+      r1 += mu1zz + dev_ghcof[k] * shm[0][tj][ti] * u0; 
+    else
+      r1 += mu1zz + dev_ghcof[k] * shm[7][tj][ti] * u0; 
     
     r2 = i6 * (strx_i *
 	       (mux1 * (shu[1][tk][tj][ti-2] - shu[1][tk][tj][ti]) + 
@@ -10893,7 +10914,11 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
 
     /* ghost point only influences the first point (k=1) because ghcof(k)=0 for k>=2 */
     //r2 += mu2zz + dev_ghcof[k] * shm[2][tj][ti] * shu[1][1][tj][ti];
-    r2 += mu2zz + dev_ghcof[k] * shm[2][tj][ti] * u1; 
+    if(low)
+      r2 += mu2zz + dev_ghcof[k] * shm[0][tj][ti] * u1; 
+    else
+      r2 += mu2zz + dev_ghcof[k] * shm[7][tj][ti] * u1; 
+
 
     r3 = i6 * (strx_i * (mux1 * (shu[2][tk][tj][ti-2] - shu[2][tk][tj][ti]) + 
 			    mux2 * (shu[2][tk][tj][ti-1] - shu[2][tk][tj][ti]) + 
@@ -10905,7 +10930,10 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
 			    muy4 * (shu[2][tk][tj+2][ti] - shu[2][tk][tj][ti]) ) );
     /* ghost point only influences the first point (k=1) because ghcof(k)=0 for k>=2 */
     //r3 += mu3zz + dev_ghcof[k] * (shl[2][tj][ti] + 2 * shm[2][tj][ti]) *  shu[2][1][tj][ti];
-    r3 += mu3zz + dev_ghcof[k] * (shl[2][tj][ti] + 2 * shm[2][tj][ti]) * u2; 
+    if(low)
+      r3 += mu3zz + dev_ghcof[k] * (shl[0][tj][ti] + 2 * shm[0][tj][ti]) * u2; 
+    else
+      r3 += mu3zz + dev_ghcof[k] * (shl[7][tj][ti] + 2 * shm[7][tj][ti]) * u2; 
     
     /* cross-terms in first component of rhs */
     /*   (la*v_y)_x */
@@ -10933,11 +10961,12 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
     u3zim1 = 0;
     u3zim2 = 0;
     for (int q=0; q<8; q++) {
+      int qi = (low) ? q : (7-q);
       float_sw4 bope = dev_bope[q*6+k];
-      u3zip2 += bope * shu[2][q][tj][ti+2];
-      u3zip1 += bope * shu[2][q][tj][ti+1];
-      u3zim1 += bope * shu[2][q][tj][ti-1];
-      u3zim2 += bope * shu[2][q][tj][ti-2];
+      u3zip2 += bope * shu[2][qi][tj][ti+2];
+      u3zip1 += bope * shu[2][qi][tj][ti+1];
+      u3zim1 += bope * shu[2][qi][tj][ti-1];
+      u3zim2 += bope * shu[2][qi][tj][ti-2];
     }
     lau3zx = i12 * (-shl[tk][tj][ti+2] * u3zip2 + 8 *
 		    shl[tk][tj][ti+1] * u3zip1 -8 *
@@ -10946,10 +10975,12 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
     r1 += strx_i * lau3zx;
     /*   (mu*w_x)_z: NOT CENTERED */
     mu3xz = 0;
-    for (int q=0; q<8; q++)
-      mu3xz += dev_bope[q*6+k] * (shm[q][tj][ti] * i12 *
-				      (-shu[2][q][tj][ti+2] + 8 * shu[2][q][tj][ti+1]
-				       -8 * shu[2][q][tj][ti-1] + shu[2][q][tj][ti-2]));
+    for (int q=0; q<8; q++) {
+      int qi = (low) ? q : (7-q);
+      mu3xz += dev_bope[q*6+k] * (shm[qi][tj][ti] * i12 *
+				      (-shu[2][qi][tj][ti+2] + 8 * shu[2][qi][tj][ti+1]
+				       -8 * shu[2][qi][tj][ti-1] + shu[2][qi][tj][ti-2]));
+    }
     r1 += strx_i * mu3xz;
    
     /* cross-terms in second component of rhs */
@@ -10979,11 +11010,12 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
     u3zjm1 = 0;
     u3zjm2 = 0;
     for (int q=0; q<8; q++) {
+      int qi = (low) ? q : (7-q);
       float_sw4 bope = dev_bope[q*6+k];
-      u3zjp2 += bope * shu[2][q][tj+2][ti];
-      u3zjp1 += bope * shu[2][q][tj+1][ti];
-      u3zjm1 += bope * shu[2][q][tj-1][ti];
-      u3zjm2 += bope * shu[2][q][tj-2][ti];
+      u3zjp2 += bope * shu[2][qi][tj+2][ti];
+      u3zjp1 += bope * shu[2][qi][tj+1][ti];
+      u3zjm1 += bope * shu[2][qi][tj-1][ti];
+      u3zjm2 += bope * shu[2][qi][tj-2][ti];
     }
     lau3zy= i12 * (-shl[tk][tj+2][ti] * u3zjp2 + 8 *
 		   shl[tk][tj+1][ti] * u3zjp1 - 8 *
@@ -10994,11 +11026,13 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
 
     /* (mu*w_y)_z: NOT CENTERED */
     mu3yz = 0;
-    for (int q=0; q<8; q++)
+    for (int q=0; q<8; q++) {
+      int qi = (low) ? q : (7-q);
       mu3yz += dev_bope[q*6+k] *
-	(shm[q][tj][ti] * i12 *
-	 (-shu[2][q][tj+2][ti] + 8 * shu[2][q][tj+1][ti] - 8 *
-	  shu[2][q][tj-1][ti] + shu[2][q][tj-2][ti]) );
+	(shm[qi][tj][ti] * i12 *
+	 (-shu[2][qi][tj+2][ti] + 8 * shu[2][qi][tj+1][ti] - 8 *
+	  shu[2][qi][tj-1][ti] + shu[2][qi][tj-2][ti]) );
+    }
     r2 += stry_j * mu3yz;
 
     /* No centered cross terms in r3 */
@@ -11008,11 +11042,12 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
     u1zim1 = 0;
     u1zim2 = 0;
     for (int q=0; q<8; q++) {
+      int qi = (low) ? q : (7-q);
       float_sw4 bope = dev_bope[q*6+k];
-      u1zip2 += bope * shu[0][q][tj][ti+2];
-      u1zip1 += bope * shu[0][q][tj][ti+1];
-      u1zim1 += bope * shu[0][q][tj][ti-1];
-      u1zim2 += bope * shu[0][q][tj][ti-2];
+      u1zip2 += bope * shu[0][qi][tj][ti+2];
+      u1zip1 += bope * shu[0][qi][tj][ti+1];
+      u1zim1 += bope * shu[0][qi][tj][ti-1];
+      u1zim2 += bope * shu[0][qi][tj][ti-2];
     }
     mu1zx= i12 * (-shm[tk][tj][ti+2] * u1zip2 + 8 *
 		  shm[tk][tj][ti+1] * u1zip1 - 8 *
@@ -11026,11 +11061,12 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
     u2zjm1 = 0;
     u2zjm2 = 0;
     for (int q=0; q<8; q++) {
+      int qi = (low) ? q : (7-q);
       float_sw4 bope = dev_bope[q*6+k];
-      u2zjp2 += bope * shu[1][q][tj+2][ti];
-      u2zjp1 += bope * shu[1][q][tj+1][ti];
-      u2zjm1 += bope * shu[1][q][tj-1][ti];
-      u2zjm2 += bope * shu[1][q][tj-2][ti];
+      u2zjp2 += bope * shu[1][qi][tj+2][ti];
+      u2zjp1 += bope * shu[1][qi][tj+1][ti];
+      u2zjm1 += bope * shu[1][qi][tj-1][ti];
+      u2zjm2 += bope * shu[1][qi][tj-2][ti];
     }
     mu2zy= i12 * (-shm[tk][tj+2][ti] * u2zjp2 + 8 *
 		  shm[tk][tj+1][ti] * u2zjp1 - 8 *
@@ -11041,19 +11077,25 @@ __global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
     /*   (la*u_x)_z: NOT CENTERED */
     lau1xz = 0;
     for (int q=0; q<8; q++)
+    {
+      int qi = (low) ? q : (7-q);
       lau1xz += dev_bope[q*6+k] *
-	(shl[q][tj][ti] * i12 *
-	 (-shu[0][q][tj][ti+2] + 8 * shu[0][q][tj][ti+1] - 8 *
-	  shu[0][q][tj][ti-1] + shu[0][q][tj][ti-2]) );
+	(shl[qi][tj][ti] * i12 *
+	 (-shu[0][qi][tj][ti+2] + 8 * shu[0][qi][tj][ti+1] - 8 *
+	  shu[0][qi][tj][ti-1] + shu[0][qi][tj][ti-2]) );
+    }
     r3 += strx_i * lau1xz;
 
     /* (la*v_y)_z: NOT CENTERED */
     lau2yz = 0;
     for (int q=0; q<8; q++)
+    {
+      int qi = (low) ? q : (7-q);
       lau2yz += dev_bope[q*6+k] *
-	(shl[q][tj][ti] * i12 *
-	 (-shu[1][q][tj+2][ti] + 8 * shu[1][q][tj+1][ti] - 8 *
-	  shu[1][q][tj-1][ti] + shu[1][q][tj-2][ti]) );
+	(shl[qi][tj][ti] * i12 *
+	 (-shu[1][qi][tj+2][ti] + 8 * shu[1][qi][tj+1][ti] - 8 *
+	  shu[1][qi][tj-1][ti] + shu[1][qi][tj-2][ti]) );
+    }
     r3 += stry_j * lau2yz;
 
     // Store the result at (i,j,k+2)
@@ -11088,14 +11130,39 @@ void rhs4_lowk_pred_gpu (int ifirst, int ilast, int jfirst, int jlast,
   dim3 blocks = dim3((ni+UX-1)/UX, (nj+1)/2, 1);
   dim3 threads = dim3(UX, 2, 6);
   if (c_order)
-    rhs4_lowk<1,1,1><<<blocks,threads,0,stream>>>
+    rhs4_Kboundary<1,1,1><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
        ni, nj, nk, nz,
        a_up, a_u, a_um,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);
   else
-    rhs4_lowk<0,1,1><<<blocks,threads,0,stream>>>
+    rhs4_Kboundary<0,1,1><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast,
+       ni, nj, nk, nz,
+       a_up, a_u, a_um,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, h, dt);
+}
+
+void rhs4_highk_pred_gpu (int ifirst, int ilast, int jfirst, int jlast,
+			 int ni, int nj, int nk, int nz,
+			 float_sw4* a_up, float_sw4* a_u, float_sw4* a_um,
+			 float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
+			 float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
+			 float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream) {
+
+  dim3 blocks = dim3((ni+UX-1)/UX, (nj+1)/2, 1);
+  dim3 threads = dim3(UX, 2, 6);
+  if (c_order)
+    rhs4_Kboundary<1,1,0><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast,
+       ni, nj, nk, nz,
+       a_up, a_u, a_um,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, h, dt);
+  else
+    rhs4_Kboundary<0,1,0><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
        ni, nj, nk, nz,
        a_up, a_u, a_um,
@@ -11113,14 +11180,39 @@ void rhs4_lowk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
   dim3 blocks = dim3((ni+UX-1)/UX, (nj+1)/2, 1);
   dim3 threads = dim3(UX, 2, 6);
   if (c_order)
-    rhs4_lowk<1,0,1><<<blocks,threads,0,stream>>>
+    rhs4_Kboundary<1,0,1><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
        ni, nj, nk, nz,
        a_up, a_u, NULL,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);
   else
-    rhs4_lowk<0,0,1><<<blocks,threads,0,stream>>>
+    rhs4_Kboundary<0,0,1><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast,
+       ni, nj, nk, nz,
+       a_up, a_u, NULL,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, h, dt);
+}
+
+void rhs4_highk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
+			 int ni, int nj, int nk, int nz, 
+			 float_sw4* a_up, float_sw4* a_u,
+			 float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
+			 float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
+			 float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream) {
+
+  dim3 blocks = dim3((ni+UX-1)/UX, (nj+1)/2, 1);
+  dim3 threads = dim3(UX, 2, 6);
+  if (c_order)
+    rhs4_Kboundary<1,0,1><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast,
+       ni, nj, nk, nz,
+       a_up, a_u, NULL,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, h, dt);
+  else
+    rhs4_Kboundary<0,0,1><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
        ni, nj, nk, nz,
        a_up, a_u, NULL,

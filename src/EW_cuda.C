@@ -1540,6 +1540,14 @@ void EW::RHSPredCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<
                             dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
                             mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
 
+      if( m_onesided[g][5] )
+        rhs4_highk_pred_gpu (2, ni-3, 2, nj-3,
+                            ni, nj, nk, nz,
+                            a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
+                            a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                            dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                            mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+
       CHECK_ERROR("RHS4_Predictor_boundary")
     }  
 #endif
@@ -1618,6 +1626,17 @@ void EW::RHSCorrCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
       // Free surface and corrector on low-k boundary
       if( m_onesided[g][4] )
         rhs4_lowk_corr_gpu (2, ni-3, 2, nj-3,
+                            ni, nj, nk, nz,
+                            a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
+                            a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                            dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                            mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+
+      if( m_onesided[g][5] )
+        std::cout << "high-k involved " << endl;
+
+      if( m_onesided[g][5] )
+        rhs4_highk_corr_gpu (2, ni-3, 2, nj-3,
                             ni, nj, nk, nz,
                             a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
                             a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
