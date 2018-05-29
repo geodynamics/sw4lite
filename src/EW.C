@@ -2536,7 +2536,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       {
 //	 evalRHSCU( U, mMu, mLambda, Lu, 0 ); // save Lu in composite grid 'Lu'
         // RHS + predictor in the rest (stream 0)
-        RHSPredCU_upper_boundary (Up, U, Um, mMu, mLambda, mRho, F, 0);
+        RHSPredCU_boundary (Up, U, Um, mMu, mLambda, mRho, F, 0);
         RHSPredCU_center (Up, U, Um, mMu, mLambda, mRho, F, 0);
       }
       else
@@ -2551,6 +2551,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
 // take predictor step, store in Up
       m_cuobj->sync_stream( 0 );
+//predictor is merged into RHSPredCU_*
       if( ! m_cuobj->has_gpu() )
 //	 evalPredictorCU( Up, U, Um, mRho, Lu, F, 1 );    
 //      else
@@ -2623,7 +2624,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if( m_cuobj->has_gpu() )
       {
 //	 evalRHSCU( Uacc, mMu, mLambda, Lu, 0 );
-         RHSCorrCU_upper_boundary (Up, Uacc, mMu, mLambda, mRho, F, 0);
+         RHSCorrCU_boundary (Up, Uacc, mMu, mLambda, mRho, F, 0);
          RHSCorrCU_center (Up, Uacc, mMu, mLambda, mRho, F, 0);
       }
       else
@@ -2637,6 +2638,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 #endif
 
       m_cuobj->sync_stream(0);
+//corrector is merged into RHSCorrCU_*
       if( !m_cuobj->has_gpu() )
 //	 evalCorrectorCU( Up, mRho, Lu, F, 1 );
 //      else

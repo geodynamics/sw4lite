@@ -1460,7 +1460,7 @@ void EW::RHSPredCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sa
                           vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
                           vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st) {
 #ifdef SW4_CUDA
-  int ni, nj, nk, startk;
+  int ni, nj, nk, startk, endk;
 
   for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
     {
@@ -1475,9 +1475,13 @@ void EW::RHSPredCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sa
         startk = 8;
       else
         startk = 2;
+      if( m_onesided[g][5] )
+        endk = m_global_nz[g] - 7;
+      else
+        endk = nk - 3;
 
       // RHS and predictor in center
-      rhs4_pred_gpu (2, ni-3, 2, nj-3, startk, nk-3,
+      rhs4_pred_gpu (2, ni-3, 2, nj-3, startk, endk,
                      ni, nj, nk,
                      a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
                      a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
@@ -1490,11 +1494,11 @@ void EW::RHSPredCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sa
 }  
 
 //---------------------------------------------------------------------------
-void EW::RHSPredCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
+void EW::RHSPredCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
                                   vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
                                   vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st) {
 #ifdef SW4_CUDA
-  int ni, nj, nk, startk;
+  int ni, nj, nk, nz, startk;
 
   for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
     {
@@ -1502,7 +1506,8 @@ void EW::RHSPredCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, v
       ni = m_iEnd[g] - m_iStart[g] + 1;
       nj = m_jEnd[g] - m_jStart[g] + 1;
       nk = m_kEnd[g] - m_kStart[g] + 1;
-      
+     
+      nz = m_global_nz[g];  
       // If we have a free surface, the other kernels start at k=8 instead of 2,
       // the free surface will compute k=[2:7]
 //      if( m_onesided[g][4] )
@@ -1528,8 +1533,8 @@ void EW::RHSPredCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, v
   
       // Free surface and predictor
       if( m_onesided[g][4] )
-        rhs4upper_pred_gpu (2, ni-3, 2, nj-3,
-                            ni, nj, nk,
+        rhs4_lowk_pred_gpu (2, ni-3, 2, nj-3,
+                            ni, nj, nk, nz,
                             a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
                             a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
                             dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
@@ -1544,7 +1549,7 @@ void EW::RHSCorrCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
                          vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
                          vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st) {
 #ifdef SW4_CUDA
-  int ni, nj, nk, startk;
+  int ni, nj, nk, startk, endk;
 
   for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
     {
@@ -1559,9 +1564,13 @@ void EW::RHSCorrCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
         startk = 8;
       else
         startk = 2;
+      if( m_onesided[g][5] )
+        endk = m_global_nz[g] - 7;
+      else
+        endk = nk - 3;
   
       // RHS and corrector in the rest of the cube
-      rhs4_corr_gpu (2, ni-3, 2, nj-3, startk, nk-3,
+      rhs4_corr_gpu (2, ni-3, 2, nj-3, startk, endk,
                      ni, nj, nk,
                      a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
                      a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
@@ -1573,11 +1582,11 @@ void EW::RHSCorrCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
 }  
 
 //---------------------------------------------------------------------------
-void EW::RHSCorrCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+void EW::RHSCorrCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
                          vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
                          vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st) {
 #ifdef SW4_CUDA
-  int ni, nj, nk, startk;
+  int ni, nj, nk, nz, startk;
 
   for(int g=0 ; g<mNumberOfCartesianGrids; g++ )
     {
@@ -1586,6 +1595,7 @@ void EW::RHSCorrCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
       nj = m_jEnd[g] - m_jStart[g] + 1;
       nk = m_kEnd[g] - m_kStart[g] + 1;
       
+      nz = m_global_nz[g];  
 //      // If we have a free surface, the other kernels start at k=8 instead of 2,
 //      // the free surface will compute k=[2:7]
 //      if( m_onesided[g][4] )
@@ -1605,10 +1615,10 @@ void EW::RHSCorrCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
 //                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
 //                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
 //                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
-      // Free surface and corrector
+      // Free surface and corrector on low-k boundary
       if( m_onesided[g][4] )
-        rhs4upper_corr_gpu (2, ni-3, 2, nj-3,
-                            ni, nj, nk,
+        rhs4_lowk_corr_gpu (2, ni-3, 2, nj-3,
+                            ni, nj, nk, nz,
                             a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
                             a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
                             dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
