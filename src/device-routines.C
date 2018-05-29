@@ -1838,11 +1838,11 @@ addsgd4_dev_v2( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int kl
             +rho(i,j,k-1)*dcz(k-1)*
             ( su(c,ith,jth,k  ) -2*qu[1][c]+ qu[0][c])
             -rho(i,j,k+1)*dcz(k+1)*
-            (qum[c][4]-2*qum[c][3]+sum(c,ith,jth,k  ))
+            (qum[4][c]-2*qum[3][c]+sum(c,ith,jth,k  ))
             +2*rho(i,j,k)*dcz(k)  *
-            (qum[c][3]-2*sum(c,ith,jth,k  )+qum[c][1])
+            (qum[3][c]-2*sum(c,ith,jth,k  )+qum[1][c])
             -rho(i,j,k-1)*dcz(k-1)*
-            (sum(c,ith,jth,k  )-2*qum[c][1]+qum[c][0]) )
+            (sum(c,ith,jth,k  )-2*qum[1][c]+qum[0][c]) )
           );
       }
     }
@@ -10615,10 +10615,10 @@ void rhs4_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, in
 // Strategy : Load the first 10 depth plans of U, lambda, mu in shared memory,
 // and compute 6 output plans.
 
-template <bool c_order, bool pred>
+template <bool c_order, bool pred, bool low>
 __launch_bounds__ (UX*12)
-__global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
-			   int ni, int nj, int nk,
+__global__ void rhs4_lowk (int ifirst, int ilast, int jfirst, int jlast,
+			   int ni, int nj, int nk, int nz,
 			   float_sw4* __restrict__ a_up,
 			   const float_sw4* __restrict__ a_u,
 			   const float_sw4* __restrict__ a_um,
@@ -10647,9 +10647,9 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
   
   int active=0, loadx1=0, loadx2=0, loady1=0, loady2=0, loady3=0;
   
-  __shared__ float_sw4 shu[3][10][2+4][UX+4];
-  __shared__ float_sw4 shl[10][2+4][UX+4];
-  __shared__ float_sw4 shm[10][2+4][UX+4];
+  __shared__ float_sw4 shu[3][8][2+4][UX+4];
+  __shared__ float_sw4 shl[8][2+4][UX+4];
+  __shared__ float_sw4 shm[8][2+4][UX+4];
 
   // i starts at 0, j starts at jfirst, k starts at 0.
   const int i = threadIdx.x + blockIdx.x * UX;
@@ -10658,7 +10658,7 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
   
   const int ti = threadIdx.x + 2;
   const int tj = threadIdx.y + 2;
-  const int tk = threadIdx.z + 2;
+  const int tk = threadIdx.z;
 
   const int nij = ni * nj;
   const int nijk = nij * nk;
@@ -10679,8 +10679,13 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
   if (j+2 < nj)
     loady3 = 1;
 
+  index = 1 * nij + j * ni + i;
+  float_sw4 u0, u1, u2;
+  u0 = u(0,index);
+  u1 = u(1,index);
+  u2 = u(2,index);
   // Loading index starts at (i-2,j-2,k)
-  index = k * nij + (j - 2) * ni + i - 2;
+  index = (k + 2) * nij + (j - 2) * ni + i - 2;
 
   // Load u, lambda and mu in the shared memory. 2 zones(X) x 3 zones(Y) x 2 zones(Z) = 12 zones
   if (loady1) {
@@ -10699,7 +10704,7 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
       shl[threadIdx.z][threadIdx.y][threadIdx.x+UX] = a_lambda[idx+UX];
       shm[threadIdx.z][threadIdx.y][threadIdx.x+UX] = a_mu[idx+UX]; 
     }
-    if (threadIdx.z < 4) {
+    if (threadIdx.z < 2) {
       idx += 6 * nij;
       if (loadx1) {
 	shu[0][threadIdx.z+6][threadIdx.y][threadIdx.x] = u(0,idx); 
@@ -10734,7 +10739,7 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
       shl[threadIdx.z][threadIdx.y+2][threadIdx.x+UX] = a_lambda[idx+UX];
       shm[threadIdx.z][threadIdx.y+2][threadIdx.x+UX] = a_mu[idx+UX]; 
     }
-    if (threadIdx.z < 4) {
+    if (threadIdx.z < 2) {
       idx += 6 * nij;
       if (loadx1) {
 	shu[0][threadIdx.z+6][threadIdx.y+2][threadIdx.x] = u(0,idx); 
@@ -10769,7 +10774,7 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
       shl[threadIdx.z][threadIdx.y+4][threadIdx.x+UX] = a_lambda[idx+UX];
       shm[threadIdx.z][threadIdx.y+4][threadIdx.x+UX] = a_mu[idx+UX]; 
     }
-    if (threadIdx.z < 4) {
+    if (threadIdx.z < 2) {
       idx += 6 * nij;
       if (loadx1) {
 	shu[0][threadIdx.z+6][threadIdx.y+4][threadIdx.x] = u(0,idx); 
@@ -10849,11 +10854,11 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
     mu1zz = 0;
     mu2zz = 0;
     mu3zz = 0;
-    for (int q=2; q<10; q++) {
+    for (int q=0; q<8; q++) {
       float_sw4 lap2mu = 0;
       float_sw4 mucof  = 0;
-      int idx = (q - 2) * 6 + k;
-      for (int m=2 ; m<10; m++) {
+      int idx = q * 6 + k;
+      for (int m=0 ; m<8; m++) {
 	mucof  += dev_acof[idx] * shm[m][tj][ti];
 	lap2mu += dev_acof[idx] * (shl[m][tj][ti] + 2 * shm[m][tj][ti]);
 	idx += 48;
@@ -10864,7 +10869,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
     }
 
     /* ghost point only influences the first point (k=1) because ghcof(k)=0 for k>=2*/
-    r1 += mu1zz + dev_ghcof[k] * shm[2][tj][ti] * shu[0][1][tj][ti];
+    //r1 += mu1zz + dev_ghcof[k] * shm[2][tj][ti] * shu[0][1][tj][ti];
+    r1 += mu1zz + dev_ghcof[k] * shm[2][tj][ti] * u0; 
     
     r2 = i6 * (strx_i *
 	       (mux1 * (shu[1][tk][tj][ti-2] - shu[1][tk][tj][ti]) + 
@@ -10886,7 +10892,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
 		(shu[1][tk][tj+2][ti] - shu[1][tk][tj][ti]) ) );
 
     /* ghost point only influences the first point (k=1) because ghcof(k)=0 for k>=2 */
-    r2 += mu2zz + dev_ghcof[k] * shm[2][tj][ti] * shu[1][1][tj][ti];
+    //r2 += mu2zz + dev_ghcof[k] * shm[2][tj][ti] * shu[1][1][tj][ti];
+    r2 += mu2zz + dev_ghcof[k] * shm[2][tj][ti] * u1; 
 
     r3 = i6 * (strx_i * (mux1 * (shu[2][tk][tj][ti-2] - shu[2][tk][tj][ti]) + 
 			    mux2 * (shu[2][tk][tj][ti-1] - shu[2][tk][tj][ti]) + 
@@ -10897,7 +10904,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
 			    muy3 * (shu[2][tk][tj+1][ti] - shu[2][tk][tj][ti]) +
 			    muy4 * (shu[2][tk][tj+2][ti] - shu[2][tk][tj][ti]) ) );
     /* ghost point only influences the first point (k=1) because ghcof(k)=0 for k>=2 */
-    r3 += mu3zz + dev_ghcof[k] * (shl[2][tj][ti] + 2 * shm[2][tj][ti]) *  shu[2][1][tj][ti];
+    //r3 += mu3zz + dev_ghcof[k] * (shl[2][tj][ti] + 2 * shm[2][tj][ti]) *  shu[2][1][tj][ti];
+    r3 += mu3zz + dev_ghcof[k] * (shl[2][tj][ti] + 2 * shm[2][tj][ti]) * u2; 
     
     /* cross-terms in first component of rhs */
     /*   (la*v_y)_x */
@@ -10924,8 +10932,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
     u3zip1 = 0;
     u3zim1 = 0;
     u3zim2 = 0;
-    for (int q=2; q<10; q++) {
-      float_sw4 bope = dev_bope[(q-2)*6+k];
+    for (int q=0; q<8; q++) {
+      float_sw4 bope = dev_bope[q*6+k];
       u3zip2 += bope * shu[2][q][tj][ti+2];
       u3zip1 += bope * shu[2][q][tj][ti+1];
       u3zim1 += bope * shu[2][q][tj][ti-1];
@@ -10938,8 +10946,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
     r1 += strx_i * lau3zx;
     /*   (mu*w_x)_z: NOT CENTERED */
     mu3xz = 0;
-    for (int q=2; q<10; q++)
-      mu3xz += dev_bope[(q-2)*6+k] * (shm[q][tj][ti] * i12 *
+    for (int q=0; q<8; q++)
+      mu3xz += dev_bope[q*6+k] * (shm[q][tj][ti] * i12 *
 				      (-shu[2][q][tj][ti+2] + 8 * shu[2][q][tj][ti+1]
 				       -8 * shu[2][q][tj][ti-1] + shu[2][q][tj][ti-2]));
     r1 += strx_i * mu3xz;
@@ -10970,8 +10978,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
     u3zjp1 = 0;
     u3zjm1 = 0;
     u3zjm2 = 0;
-    for (int q=2; q<10; q++) {
-      float_sw4 bope = dev_bope[(q-2)*6+k];
+    for (int q=0; q<8; q++) {
+      float_sw4 bope = dev_bope[q*6+k];
       u3zjp2 += bope * shu[2][q][tj+2][ti];
       u3zjp1 += bope * shu[2][q][tj+1][ti];
       u3zjm1 += bope * shu[2][q][tj-1][ti];
@@ -10986,8 +10994,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
 
     /* (mu*w_y)_z: NOT CENTERED */
     mu3yz = 0;
-    for (int q=2; q<10; q++)
-      mu3yz += dev_bope[(q-2)*6+k] *
+    for (int q=0; q<8; q++)
+      mu3yz += dev_bope[q*6+k] *
 	(shm[q][tj][ti] * i12 *
 	 (-shu[2][q][tj+2][ti] + 8 * shu[2][q][tj+1][ti] - 8 *
 	  shu[2][q][tj-1][ti] + shu[2][q][tj-2][ti]) );
@@ -10999,8 +11007,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
     u1zip1 = 0;
     u1zim1 = 0;
     u1zim2 = 0;
-    for (int q=2; q<10; q++) {
-      float_sw4 bope = dev_bope[(q-2)*6+k];
+    for (int q=0; q<8; q++) {
+      float_sw4 bope = dev_bope[q*6+k];
       u1zip2 += bope * shu[0][q][tj][ti+2];
       u1zip1 += bope * shu[0][q][tj][ti+1];
       u1zim1 += bope * shu[0][q][tj][ti-1];
@@ -11017,8 +11025,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
     u2zjp1 = 0;
     u2zjm1 = 0;
     u2zjm2 = 0;
-    for (int q=2; q<10; q++) {
-      float_sw4 bope = dev_bope[(q-2)*6+k];
+    for (int q=0; q<8; q++) {
+      float_sw4 bope = dev_bope[q*6+k];
       u2zjp2 += bope * shu[1][q][tj+2][ti];
       u2zjp1 += bope * shu[1][q][tj+1][ti];
       u2zjm1 += bope * shu[1][q][tj-1][ti];
@@ -11032,8 +11040,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
 
     /*   (la*u_x)_z: NOT CENTERED */
     lau1xz = 0;
-    for (int q=2; q<10; q++)
-      lau1xz += dev_bope[(q-2)*6+k] *
+    for (int q=0; q<8; q++)
+      lau1xz += dev_bope[q*6+k] *
 	(shl[q][tj][ti] * i12 *
 	 (-shu[0][q][tj][ti+2] + 8 * shu[0][q][tj][ti+1] - 8 *
 	  shu[0][q][tj][ti-1] + shu[0][q][tj][ti-2]) );
@@ -11041,8 +11049,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
 
     /* (la*v_y)_z: NOT CENTERED */
     lau2yz = 0;
-    for (int q=2; q<10; q++)
-      lau2yz += dev_bope[(q-2)*6+k] *
+    for (int q=0; q<8; q++)
+      lau2yz += dev_bope[q*6+k] *
 	(shl[q][tj][ti] * i12 *
 	 (-shu[1][q][tj+2][ti] + 8 * shu[1][q][tj+1][ti] - 8 *
 	  shu[1][q][tj-1][ti] + shu[1][q][tj-2][ti]) );
@@ -11070,8 +11078,8 @@ __global__ void rhs4upper (int ifirst, int ilast, int jfirst, int jlast,
 // *************************************************************************************
 // Kernel launcher
 
-void rhs4upper_pred_gpu (int ifirst, int ilast, int jfirst, int jlast,
-			 int ni, int nj, int nk,
+void rhs4_lowk_pred_gpu (int ifirst, int ilast, int jfirst, int jlast,
+			 int ni, int nj, int nk, int nz,
 			 float_sw4* a_up, float_sw4* a_u, float_sw4* a_um,
 			 float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
 			 float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
@@ -11080,23 +11088,23 @@ void rhs4upper_pred_gpu (int ifirst, int ilast, int jfirst, int jlast,
   dim3 blocks = dim3((ni+UX-1)/UX, (nj+1)/2, 1);
   dim3 threads = dim3(UX, 2, 6);
   if (c_order)
-    rhs4upper<1,1><<<blocks,threads,0,stream>>>
+    rhs4_lowk<1,1,1><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
-       ni, nj, nk,
+       ni, nj, nk, nz,
        a_up, a_u, a_um,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);
   else
-    rhs4upper<0,1><<<blocks,threads,0,stream>>>
+    rhs4_lowk<0,1,1><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
-       ni, nj, nk,
+       ni, nj, nk, nz,
        a_up, a_u, a_um,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);
 }
 
-void rhs4upper_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
-			 int ni, int nj, int nk,
+void rhs4_lowk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
+			 int ni, int nj, int nk, int nz, 
 			 float_sw4* a_up, float_sw4* a_u,
 			 float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
 			 float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
@@ -11105,16 +11113,16 @@ void rhs4upper_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
   dim3 blocks = dim3((ni+UX-1)/UX, (nj+1)/2, 1);
   dim3 threads = dim3(UX, 2, 6);
   if (c_order)
-    rhs4upper<1,0><<<blocks,threads,0,stream>>>
+    rhs4_lowk<1,0,1><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
-       ni, nj, nk,
+       ni, nj, nk, nz,
        a_up, a_u, NULL,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);
   else
-    rhs4upper<0,0><<<blocks,threads,0,stream>>>
+    rhs4_lowk<0,0,1><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
-       ni, nj, nk,
+       ni, nj, nk, nz,
        a_up, a_u, NULL,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);

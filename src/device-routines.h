@@ -262,15 +262,15 @@ void rhs4_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, in
                     float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
                     float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
 
-void rhs4upper_pred_gpu (int ifirst, int ilast, int jfirst, int jlast,
-			 int ni, int nj, int nk,
+void rhs4_lowk_pred_gpu (int ifirst, int ilast, int jfirst, int jlast,
+			 int ni, int nj, int nk, int nz,
 			 float_sw4* a_up, float_sw4* a_u, float_sw4* a_um,
 			 float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
 			 float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
 			 float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
 
-void rhs4upper_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
-			 int ni, int nj, int nk,
+void rhs4_lowk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
+			 int ni, int nj, int nk, int nz,
 			 float_sw4* a_up, float_sw4* a_u,
 			 float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
 			 float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
