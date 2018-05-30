@@ -244,6 +244,45 @@ __global__ void HaloToBufferKernel_dev_rev_v2(float_sw4* block_left, float_sw4* 
 // *****************************************************************************
 // New GPU kernels from G. Thomas-Collignon
 
+__global__ void HaloToBufferKernelX_dev(float_sw4* block_left, float_sw4* block_right,
+                                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
+                                        int ni, int nj, int nk, int m_padding, const int m_neighbor2,
+                                        const int m_neighbor3, const int mpi_process_null);
+
+__global__ void HaloToBufferKernelX_dev_rev(float_sw4* block_left, float_sw4* block_right,
+                                            float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
+                                            int ni, int nj, int nk, int m_padding, const int m_neighbor2,
+                                            const int m_neighbor3, const int mpi_process_null);
+
+__global__ void HaloToBufferKernelY_dev(float_sw4* block_up, float_sw4* block_down,
+                                        float_sw4 * upSideEdge, float_sw4 * downSideEdge,
+                                        int ni, int nj, int nk, int m_padding, const int m_neighbor0,
+                                        const int  m_neighbor1, const int mpi_process_null);
+
+__global__ void HaloToBufferKernelY_dev_rev(float_sw4* block_up, float_sw4* block_down,
+                                            float_sw4 * upSideEdge, float_sw4 * downSideEdge,
+                                            int ni, int nj, int nk, int m_padding, const int m_neighbor0,
+                                            const int  m_neighbor1, const int mpi_process_null);
+
+__global__ void BufferToHaloKernelX_dev(float_sw4* block_left, float_sw4* block_right, float_sw4 * leftSideEdge, 
+                                        float_sw4 * rightSideEdge, int ni, int nj, int nk, int m_padding, 
+                                        const int m_neighbor2, const int m_neighbor3, const int mpi_process_null );
+
+__global__ void BufferToHaloKernelX_dev_rev(float_sw4* block_left, float_sw4* block_right,
+                                            float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, 
+                                            int ni, int nj, int nk, int m_padding, const int m_neighbor2,
+                                            const int m_neighbor3, const int mpi_process_null);
+
+__global__ void BufferToHaloKernelY_dev(float_sw4* block_up, float_sw4* block_down,
+                                        float_sw4* upSideEdge, float_sw4* downSideEdge,
+                                        int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,
+                                        const int  m_neighbor1, const int mpi_process_null );
+
+__global__ void BufferToHaloKernelY_dev_rev(float_sw4* block_up, float_sw4* block_down,
+                                            float_sw4* upSideEdge, float_sw4* downSideEdge,
+                                            int ni, int nj, int nk, int m_padding, const int m_neighbor0,
+                                            const int m_neighbor1, const int mpi_process_null );
+
 
 
 // *****************************************************************************
@@ -290,5 +329,12 @@ void rhs4_highk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
 			 float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
 			 float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
 
+void bcfortsg_gpu (int ib, int ie, int jb, int je, int kb, int ke, int* wind,
+		   int nx, int ny, int nz, float_sw4* a_u, float_sw4 h, boundaryConditionType *bccnd,
+		   float_sw4* mu, float_sw4* la, float_sw4 t,
+		   float_sw4* bforce1, float_sw4* bforce2, float_sw4* bforce3,
+		   float_sw4* bforce4, float_sw4* bforce5, float_sw4* bforce6,
+		   float_sw4 om, float_sw4 ph, float_sw4 cv,
+		   float_sw4* strx, float_sw4* stry, int c_order, cudaStream_t stream);
 
 #endif

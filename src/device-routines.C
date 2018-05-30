@@ -9369,6 +9369,7 @@ __global__ void enforceCartTopo_dev( int ifirstCart, int ilastCart, int jfirstCa
 // *****************************************************************************
 // New GPU kernels from G. Thomas-Collignon
 
+
 // Macros to access the triple-arrays in C order (structure of arrays) or not (array of structure)
 // This relies on nijk (cube size) to be defined.
 #define u(c,idx) (c_order ? a_u[idx+(c)*nijk] : a_u[3*(idx)+c])
@@ -11218,6 +11219,489 @@ void rhs4_highk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
        a_up, a_u, NULL,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);
+}
+
+// *************************************************************************************
+// *************************************************************************************
+// *************************************************************************************
+template <bool c_order>
+__launch_bounds__(BX*BY)
+__global__ void bcfortsg (int ib, int ie, int jb, int je, int kb, int ke, int* wind,
+			  int nx, int ny, int nz, float_sw4* a_u, float_sw4 h, boundaryConditionType *bccnd,
+			  float_sw4* mu, float_sw4* la, float_sw4 t,
+			  float_sw4* bforce1, float_sw4* bforce2, float_sw4* bforce3,
+			  float_sw4* bforce4, float_sw4* bforce5, float_sw4* bforce6,
+			  float_sw4 om, float_sw4 ph, float_sw4 cv,
+			  float_sw4* strx, float_sw4* stry )
+{
+  const float_sw4 d4a = 2.0/3.0;
+  const float_sw4 d4b = -1.0/12.0;
+  const size_t ni  = ie-ib+1;
+  const size_t nij = ni*(je-jb+1);
+  const size_t nijk = nij*(ke-kb+1);
+  for( int s=0 ; s < 6 ; s++ )
+  {
+    if( bccnd[s]==1 || bccnd[s]==2 )
+    {
+      size_t idel = 1+wind[1+6*s]-wind[6*s];
+      size_t ijdel = idel * (1+wind[3+6*s]-wind[2+6*s]);
+      int i = wind[6*s] + threadIdx.x + blockIdx.x*blockDim.x;
+      int j = wind[6*s+2] + threadIdx.y + blockIdx.y*blockDim.y;
+      int k = wind[6*s+4] +  threadIdx.z + blockIdx.z*blockDim.z;
+      if( i > wind[6*s+1] || j > wind[6*s+3] || k > wind[6*s+5])
+        continue;
+      int qq = i-wind[6*s] + idel*(j-wind[6*s+2]) + (k-wind[4+6*s])*ijdel;
+      size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
+      if( s== 0 )
+      {
+        u(0,ind) = bforce1[  3*qq];
+        u(1,ind) = bforce1[1+3*qq];
+        u(2,ind) = bforce1[2+3*qq];
+      }
+      else if( s== 1 )
+      {
+        u(0,ind) = bforce2[  3*qq];
+        u(1,ind) = bforce2[1+3*qq];
+        u(2,ind) = bforce2[2+3*qq];
+      }
+      else if( s==2 )
+      {
+        u(0,ind) = bforce3[  3*qq];
+        u(1,ind) = bforce3[1+3*qq];
+        u(2,ind) = bforce3[2+3*qq];
+      }
+      else if( s==3 )
+      {
+        u(0,ind) = bforce4[  3*qq];
+        u(1,ind) = bforce4[1+3*qq];
+        u(2,ind) = bforce4[2+3*qq];
+      }
+      else if( s==4 )
+      {
+        u(0,ind) = bforce5[  3*qq];
+        u(1,ind) = bforce5[1+3*qq];
+        u(2,ind) = bforce5[2+3*qq];
+      }
+      else if( s==5 )
+      {
+        u(0,ind) = bforce6[  3*qq];
+        u(1,ind) = bforce6[1+3*qq];
+        u(2,ind) = bforce6[2+3*qq];
+      }
+    }
+    else if( bccnd[s]==3 )
+    {
+      int i = wind[6*s] + threadIdx.x + blockIdx.x*blockDim.x;
+      int j = wind[6*s+2] + threadIdx.y + blockIdx.y*blockDim.y;
+      int k = wind[6*s+4] +  threadIdx.z + blockIdx.z*blockDim.z;
+      if( i > wind[6*s+1] || j > wind[6*s+3] || k > wind[6*s+5])
+        continue;
+      size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
+      if( s==0 )
+      {
+        size_t indp = ind+nx;
+        u(0,ind) = u(0,indp);
+        u(1,ind) = u(1,indp);
+        u(2,ind) = u(2,indp);
+      }
+      else if( s==1 )
+      {
+        size_t indp= ind-nx;
+        u(0,ind) = u(0,indp);
+        u(1,ind) = u(1,indp);
+        u(2,ind) = u(2,indp);
+      }
+      else if( s==2 )
+      {
+        size_t indp= ind+ni*ny;
+        u(0,ind) = u(0,indp);
+        u(1,ind) = u(1,indp);
+        u(2,ind) = u(2,indp);
+      }
+      else if( s==3 )
+      {
+        size_t indp= ind-ni*ny;
+        u(0,ind) = u(0,indp);
+        u(1,ind) = u(1,indp);
+        u(2,ind) = u(2,indp);
+      }
+      else if( s==4 )
+      {
+        size_t indp= ind+nij*nz;
+        u(0,ind) = u(0,indp);
+        u(1,ind) = u(1,indp);
+        u(2,ind) = u(2,indp);
+      }
+      else if( s==5 )
+      {
+        size_t indp= ind-nij*nz;
+        u(0,ind) = u(0,indp);
+        u(1,ind) = u(1,indp);
+        u(2,ind) = u(2,indp);
+      }
+    }
+    else if( bccnd[s]==0 )
+    {
+      if( s != 4 && s != 5)
+      {
+        printf("EW::bcfortsg_dev_indrev, ERROR: Free surface conditio not implemented for side\n");
+        return ;
+      }
+
+      int i = ib+2 + threadIdx.x + blockIdx.x*blockDim.x;
+      int j = jb+2 + threadIdx.y + blockIdx.y*blockDim.y;
+      int kk = kb+2 + threadIdx.z + blockIdx.z*blockDim.z;
+      if( i > ie-2 || j > je-2 || kk != kb+2)
+        continue;
+
+      if( s==4 )
+      {
+        int k=1, kl=1;
+        size_t qq = i-ib+ni*(j-jb);
+        size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
+        float_sw4 wx = strx[i-ib]*(d4a*(u(2,ind+1   )-u(2,ind-1   ))+
+				   d4b*(u(2,ind+2   )-u(2,ind-2   )));
+        float_sw4 ux = strx[i-ib]*(d4a*(u(0,ind+1   )-u(0,ind-1   ))+
+				   d4b*(u(0,ind+2   )-u(0,ind-2   )));
+        float_sw4 wy = stry[j-jb]*(d4a*(u(2,ind+ni  )-u(2,ind-ni  ))+
+                                   d4b*(u(2,ind+2*ni)-u(2,ind-2*ni)));
+        float_sw4 vy = stry[j-jb]*(d4a*(u(1,ind+ni  )-u(1,ind-ni  ))+
+                                   d4b*(u(1,ind+2*ni)-u(1,ind-2*ni)));
+        float_sw4 uz=0, vz=0, wz=0;
+        for( int w=1 ; w <= 4 ; w++ )
+        {
+          uz += dev_sbop[w]*u(0,ind+nij*kl*(w-1));
+          vz += dev_sbop[w]*u(1,ind+nij*kl*(w-1));
+          wz += dev_sbop[w]*u(2,ind+nij*kl*(w-1));
+        }
+        u(0,ind-nij*kl) = (-uz-kl*wx+kl*h*bforce5[  3*qq]/mu[ind])/dev_sbop[0];
+        u(1,ind-nij*kl) = (-vz-kl*wy+kl*h*bforce5[1+3*qq]/mu[ind])/dev_sbop[0];
+	u(2,ind-nij*kl) = (-wz + (-kl*la[ind]*(ux+vy)+kl*h*bforce5[2+3*qq])/
+                                (2*mu[ind]+la[ind]))/dev_sbop[0];
+      }
+      else
+      {
+        int k=nz, kl=-1;
+        size_t qq = i-ib+ni*(j-jb);
+        size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
+        float_sw4 wx = strx[i-ib]*(d4a*(u(2,ind+1   )-u(2,ind-1   ))+
+				   d4b*(u(2,ind+2   )-u(2,ind-2   )));
+        float_sw4 ux = strx[i-ib]*(d4a*(u(0,ind+1   )-u(0,ind-1   ))+
+				   d4b*(u(0,ind+2   )-u(0,ind-2   )));
+        float_sw4 wy = stry[j-jb]*(d4a*(u(2,ind+ni  )-u(2,ind-ni  ))+
+                                   d4b*(u(2,ind+2*ni)-u(2,ind-2*ni)));
+        float_sw4 vy = stry[j-jb]*(d4a*(u(1,ind+ni)  -u(1,ind-ni  ))+
+                                   d4b*(u(1,ind+2*ni)-u(1,ind-2*ni)));
+        float_sw4 uz=0, vz=0, wz=0;
+        for( int w=1 ; w <= 4 ; w++ )
+        {
+          uz += dev_sbop[w]*u(0,ind+nij*kl*(w-1));
+          vz += dev_sbop[w]*u(1,ind+nij*kl*(w-1));
+          wz += dev_sbop[w]*u(2,ind+nij*kl*(w-1));
+        }
+        u(0,ind-nij*kl) = (-uz-kl*wx+kl*h*bforce6[  3*qq]/mu[ind])/dev_sbop[0];
+        u(1,ind-nij*kl) = (-vz-kl*wy+kl*h*bforce6[1+3*qq]/mu[ind])/dev_sbop[0];
+        u(2,ind-nij*kl) = (-wz+(-kl*la[ind]*(ux+vy)+kl*h*bforce6[2+3*qq])/
+                                (2*mu[ind]+la[ind]))/dev_sbop[0];
+
+      }
+    }
+  }
+}
+
+// *************************************************************************************
+// Launcher
+void bcfortsg_gpu (int ib, int ie, int jb, int je, int kb, int ke, int* wind,
+		   int nx, int ny, int nz, float_sw4* a_u, float_sw4 h, boundaryConditionType *bccnd,
+		   float_sw4* mu, float_sw4* la, float_sw4 t,
+		   float_sw4* bforce1, float_sw4* bforce2, float_sw4* bforce3,
+		   float_sw4* bforce4, float_sw4* bforce5, float_sw4* bforce6,
+		   float_sw4 om, float_sw4 ph, float_sw4 cv,
+		   float_sw4* strx, float_sw4* stry, int c_order, cudaStream_t stream) {
+  int nicomp = ie - ib + 1;
+  int njcomp = je - jb + 1;
+  dim3 blocks = dim3((nicomp+BX-1)/BX, (njcomp+BY-1)/BY, 1);
+  dim3 threads = dim3(BX, BY, 1);
+  if (c_order)
+    bcfortsg<true><<<blocks,threads,0,stream>>>
+      (ib, ie, jb, je, kb, ke, wind,
+       nx, ny, nz, a_u, h, bccnd,
+       mu, la, t,
+       bforce1, bforce2, bforce3,
+       bforce4, bforce5, bforce6,
+       om, ph, cv,
+       strx, stry);
+  else
+    bcfortsg<false><<<blocks,threads,0,stream>>>
+      (ib, ie, jb, je, kb, ke, wind,
+       nx, ny, nz, a_u, h, bccnd,
+       mu, la, t,
+       bforce1, bforce2, bforce3,
+       bforce4, bforce5, bforce6,
+       om, ph, cv,
+       strx, stry);
+}
+
+//-----------------------------------------------------------------------
+__global__ void HaloToBufferKernelX_dev(float_sw4* block_left, float_sw4* block_right,
+                                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
+                                        int ni, int nj, int nk, int m_padding, const int m_neighbor2,
+                                        const int m_neighbor3, const int mpi_process_null)
+{
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = 3*m_padding*ni;
+   size_t npts = static_cast<size_t>(nk);
+
+   if( m_neighbor2 !=  mpi_process_null)
+      for (i = myi; i < n_m_padding*npts; i += nthreads)
+      {
+         idx = i/n_m_padding;
+         j  = i - idx*n_m_padding;
+         istart = idx*(3*ni*nj);
+         block_left[istart+j] = leftSideEdge[i];
+      }
+
+
+   if( m_neighbor3 !=  mpi_process_null)
+      for (i = myi; i < n_m_padding*npts; i += nthreads)
+      {
+         idx = i/n_m_padding;
+         j  = i - idx*n_m_padding;
+         istart = idx*(3*ni*nj);
+         block_right[istart+j] = rightSideEdge[i];
+      }
+}
+
+//-----------------------------------------------------------------------
+__global__ void HaloToBufferKernelX_dev_rev(float_sw4* block_left, float_sw4* block_right,
+                                            float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
+                                            int ni, int nj, int nk, int m_padding, const int m_neighbor2,
+                                            const int m_neighbor3, const int mpi_process_null)
+{
+   int njk = nj*nk;
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = m_padding*ni;
+   size_t npts = static_cast<size_t>(3*nk);
+
+   if( m_neighbor2 !=  mpi_process_null)
+      for (i = myi; i < n_m_padding*npts; i += nthreads)
+      {
+         idx = i/n_m_padding;
+         j  = i - idx*n_m_padding;
+         istart = idx*(ni*nj);
+         block_left[istart+j] = leftSideEdge[i];
+      }
+
+
+   if( m_neighbor3 !=  mpi_process_null)
+      for (i = myi; i < n_m_padding*npts; i += nthreads)
+      {
+         idx = i/n_m_padding;
+         j  = i - idx*n_m_padding;
+         istart = idx*(ni*nj);
+         block_right[istart+j] = rightSideEdge[i];
+      }
+
+}
+
+//-----------------------------------------------------------------------
+__global__ void HaloToBufferKernelY_dev(float_sw4* block_up, float_sw4* block_down,
+                                        float_sw4 * upSideEdge, float_sw4 * downSideEdge,
+                                        int ni, int nj, int nk, int m_padding, const int m_neighbor0,
+                                        const int  m_neighbor1, const int mpi_process_null)
+{
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = 3*m_padding;
+   size_t npts = static_cast<size_t>(nj*nk);
+
+   if( m_neighbor1 !=  mpi_process_null)
+      for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+      {
+         idx = i/(n_m_padding);
+         j  = i - idx*n_m_padding;
+         istart = idx*(3*ni);
+         block_up[istart+j] = upSideEdge[i];
+      }
+
+   if( m_neighbor0 !=  mpi_process_null)
+      for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+      {
+         idx = i/(n_m_padding);
+         j  = i - idx*n_m_padding;
+         istart = idx*(3*ni);
+         block_down[istart+j] = downSideEdge[i];
+      }
+}
+
+//-----------------------------------------------------------------------
+__global__ void HaloToBufferKernelY_dev_rev(float_sw4* block_up, float_sw4* block_down,
+                                            float_sw4 * upSideEdge, float_sw4 * downSideEdge,
+                                            int ni, int nj, int nk, int m_padding, const int m_neighbor0,
+                                            const int  m_neighbor1, const int mpi_process_null)
+{
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = m_padding;
+   size_t npts = static_cast<size_t>(3*nj*nk);
+
+   if( m_neighbor1 !=  mpi_process_null)
+      for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+      {
+         idx = i/(n_m_padding);
+         j  = i - idx*n_m_padding;
+         istart = idx*ni;
+         block_up[istart+j] = upSideEdge[i];
+      }
+
+   if( m_neighbor0 !=  mpi_process_null)
+      for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+      {
+         idx = i/(n_m_padding);
+         j  = i - idx*n_m_padding;
+         istart = idx*ni;
+         block_down[istart+j] = downSideEdge[i];
+      }
+}
+
+//-----------------------------------------------------------------------
+__global__ void BufferToHaloKernelX_dev(float_sw4* block_left, float_sw4* block_right, float_sw4 * leftSideEdge, 
+                                        float_sw4 * rightSideEdge, int ni, int nj, int nk, int m_padding, 
+                                        const int m_neighbor2, const int m_neighbor3, const int mpi_process_null )
+{
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = 3*m_padding*ni;
+   size_t npts = static_cast<size_t>(nk);
+
+   if( m_neighbor2 !=  mpi_process_null)
+   for (i = myi; i < n_m_padding*npts; i += nthreads)
+   {
+        idx = i/n_m_padding;
+        j  = i - idx*n_m_padding;
+        istart = idx*(3*ni*nj);
+        leftSideEdge[i] = block_left[istart+j];
+   }
+
+   if( m_neighbor3 !=  mpi_process_null)
+   for (i = myi; i < n_m_padding*npts; i += nthreads)
+   {
+        idx = i/n_m_padding;
+        j  = i - idx*n_m_padding;
+        istart = idx*(3*ni*nj);
+        rightSideEdge[i] = block_right[istart+j];
+   }
+
+}
+
+//-----------------------------------------------------------------------
+__global__ void BufferToHaloKernelX_dev_rev(float_sw4* block_left, float_sw4* block_right,
+                                            float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, 
+                                            int ni, int nj, int nk, int m_padding, const int m_neighbor2,
+                                            const int m_neighbor3, const int mpi_process_null)
+{
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = m_padding*ni;
+   size_t npts = static_cast<size_t>(3*nk);
+
+   if( m_neighbor2 !=  mpi_process_null)
+   for (i = myi; i < n_m_padding*npts; i += nthreads)
+   {
+        idx = i/n_m_padding;
+        j  = i - idx*n_m_padding;
+        istart = idx*(ni*nj);
+        leftSideEdge[i] = block_left[istart+j];
+   }
+
+   if( m_neighbor3 !=  mpi_process_null)
+   for (i = myi; i < n_m_padding*npts; i += nthreads)
+   {
+        idx = i/n_m_padding;
+        j  = i - idx*n_m_padding;
+        istart = idx*(ni*nj);
+        rightSideEdge[i] = block_right[istart+j];
+   }
+}
+
+//-----------------------------------------------------------------------
+__global__ void BufferToHaloKernelY_dev(float_sw4* block_up, float_sw4* block_down,
+                                        float_sw4* upSideEdge, float_sw4* downSideEdge,
+                                        int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,
+                                        const int  m_neighbor1, const int mpi_process_null )
+{
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = 3*m_padding;
+   size_t npts = static_cast<size_t>(nj*nk);
+
+   if( m_neighbor1 !=  mpi_process_null)
+   for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+   {
+        idx = i/(n_m_padding);
+        j  = i - idx*n_m_padding;
+        istart = idx*(3*ni);
+        upSideEdge[i] = block_up[istart+j];
+   }
+
+   if( m_neighbor0 !=  mpi_process_null)
+   for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+   {
+        idx = i/(n_m_padding);
+        j  = i - idx*n_m_padding;
+        istart = idx*(3*ni);
+        downSideEdge[i] = block_down[istart+j];
+   }
+}
+
+
+//-----------------------------------------------------------------------
+__global__ void BufferToHaloKernelY_dev_rev(float_sw4* block_up, float_sw4* block_down,
+                                            float_sw4* upSideEdge, float_sw4* downSideEdge,
+                                            int ni, int nj, int nk, int m_padding, const int m_neighbor0,
+                                            const int m_neighbor1, const int mpi_process_null )
+{
+   int n_m_padding, istart, idx_halo,  i, idx, j;
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myi = threadIdx.x + blockIdx.x * blockDim.x;
+
+   n_m_padding = m_padding;
+   size_t npts = static_cast<size_t>(3*nj*nk);
+
+   if( m_neighbor1 !=  mpi_process_null)
+   for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+   {
+        idx = i/(n_m_padding);
+        j  = i - idx*n_m_padding;
+        istart = idx*ni;
+        upSideEdge[i] = block_up[istart+j];
+   }
+
+   if( m_neighbor0 !=  mpi_process_null)
+   for ( size_t i = myi; i < n_m_padding*npts; i += nthreads )
+   {
+        idx = i/(n_m_padding);
+        j  = i - idx*n_m_padding;
+        istart = idx*ni;
+        downSideEdge[i] = block_down[istart+j];
+   }
+
 }
 
 

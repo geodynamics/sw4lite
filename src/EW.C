@@ -2512,7 +2512,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
 // all types of forcing...
       if( m_cuobj->has_gpu() )
-	 ForceCU( t, dev_F, false, 1 );
+	 ForceCU( t, dev_F, false, 0 );
       else
 	 Force( t, F, m_point_sources, false );
  // Need F on device for predictor, will make this asynchronous:
@@ -2563,14 +2563,22 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       //	    Up[g].copy_from_device(m_cuobj,true,1);
       //         }
 
-      m_cuobj->sync_stream(1);
+      //m_cuobj->sync_stream(1);
 
       time_measure[2] = MPI_Wtime();
 
 // communicate across processor boundaries
       if( m_cuobj->has_gpu() )
          for(int g=0 ; g < mNumberOfGrids ; g++ )
-	    communicate_arrayCU( Up[g], g, 0);
+         {
+	    //communicate_arrayCU( Up[g], g, 0);
+           pack_HaloArrayCU_X (Up[g], g, 0);
+           communicate_arrayCU_X( Up[g], g, 0);
+           unpack_HaloArrayCU_X (Up[g], g, 0);
+           pack_HaloArrayCU_Y (Up[g], g, 0);
+           communicate_arrayCU_Y( Up[g], g, 0);
+           unpack_HaloArrayCU_Y (Up[g], g, 0);
+	 } 
       else
          for(int g=0 ; g < mNumberOfGrids ; g++ )
 	    communicate_array( Up[g], g );
@@ -2601,7 +2609,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
       // Corrector
       if( m_cuobj->has_gpu() )
-	 ForceCU( t, dev_F, true, 1 );
+	 ForceCU( t, dev_F, true, 0 );
       else
 	 Force( t, F, m_point_sources, true );
       //      for( int g=0; g < mNumberOfGrids ; g++ )
@@ -2650,7 +2658,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if ( m_use_supergrid )
       {
 	 if( m_cuobj->has_gpu() )
-	    addSuperGridDampingCU( Up, U, Um, mRho, 1 );
+	    addSuperGridDampingCU( Up, U, Um, mRho, 0 );
 	 else
 	    addSuperGridDamping( Up, U, Um, mRho );
 
@@ -2660,7 +2668,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       //         for( int g=0; g < mNumberOfGrids ; g++ )
       //	    Up[g].copy_from_device(m_cuobj,true,1);
 
-      m_cuobj->sync_stream(1);
+      //m_cuobj->sync_stream(1);
 
       //      time_measure[6] = MPI_Wtime();
       time_measure[7] = MPI_Wtime();
@@ -2669,7 +2677,15 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 // communicate across processor boundaries
       if( m_cuobj->has_gpu() )
          for(int g=0 ; g < mNumberOfGrids ; g++ )
-	    communicate_arrayCU( Up[g], g, 0 );
+         {
+	    // communicate_arrayCU( Up[g], g, 0 );
+           pack_HaloArrayCU_X (Up[g], g, 0);
+           communicate_arrayCU_X( Up[g], g, 0 );
+           unpack_HaloArrayCU_X (Up[g], g, 0);
+           pack_HaloArrayCU_Y (Up[g], g, 0);
+           communicate_arrayCU_Y( Up[g], g, 0 );
+           unpack_HaloArrayCU_Y (Up[g], g, 0);
+         }
       else
          for(int g=0 ; g < mNumberOfGrids ; g++ )
 	    communicate_array( Up[g], g );

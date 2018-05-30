@@ -467,14 +467,26 @@ class EW
    bool m_use_dg;
  
    // Halo data communication 
-   vector<float_sw4*> dev_SideEdge_Send_X, dev_SideEdge_Recv_X;
-   vector<float_sw4*> dev_SideEdge_Send_Y, dev_SideEdge_Recv_Y;
-   vector<float_sw4*>  m_SideEdge_Send_X, m_SideEdge_Recv_X;
-   vector<float_sw4*>  m_SideEdge_Send_Y, m_SideEdge_Recv_Y;
+   //vector<float_sw4*> dev_SideEdge_Send_X, dev_SideEdge_Recv_X;
+   //vector<float_sw4*> dev_SideEdge_Send_Y, dev_SideEdge_Recv_Y;
+   //vector<float_sw4*>  m_SideEdge_Send_X, m_SideEdge_Recv_X;
+   //vector<float_sw4*>  m_SideEdge_Send_Y, m_SideEdge_Recv_Y;
+
+   vector<float_sw4*> dev_SideEdge_Send, dev_SideEdge_Recv;
+   vector<float_sw4*>  m_SideEdge_Send, m_SideEdge_Recv;
+
    void setup_device_communication_array();
    void communicate_arrayCU( Sarray& u, int g , int st);
+   void communicate_arrayCU_X( Sarray& u, int g , int st);
+   void communicate_arrayCU_Y( Sarray& u, int g , int st);
 
 #ifdef SW4_CUDA
+   void pack_HaloArrayCU( Sarray& u, int g , int st);
+   void unpack_HaloArrayCU( Sarray& u, int g , int st);
+   void pack_HaloArrayCU_X( Sarray& u, int g , int st);
+   void unpack_HaloArrayCU_X( Sarray& u, int g , int st);
+   void pack_HaloArrayCU_Y( Sarray& u, int g , int st);
+   void unpack_HaloArrayCU_Y( Sarray& u, int g , int st);
    void CheckCudaCall(cudaError_t command, const char * commandName, const char * fileName, int line);
 #endif
    
