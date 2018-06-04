@@ -10611,6 +10611,1111 @@ void rhs4_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, in
 // *************************************************************************************
 // *************************************************************************************
 // *************************************************************************************
+// RHS4 X halos
+// ------------
+// This kernel computes the halos on each side in the X dimension :
+//   [ifirst:ifirst+1, jfirst:jlast, kfirst:klast]
+//   [ilast-1:ilast  , jfirst:jlast, kfirst:klast]
+// We're using 384 threads : 2x16x12 to compute the 2 elements for a (16x12) area.
+// The 384 threads are re-mapped as 6x16x4 threads to load the input data with halos,
+// so that the 6 coalesced elements that we need can be loaded efficiently in one operation.
+
+template <bool c_order, bool pred>
+  __launch_bounds__(384)
+  __global__ void rhs4_X (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+			  int ni, int nj, int nk,
+			  float_sw4* __restrict__ a_up,
+			  const float_sw4* __restrict__ a_u,
+			  const float_sw4* __restrict__ a_um,
+			  const float_sw4* __restrict__ a_mu,
+			  const float_sw4* __restrict__ a_lambda,
+			  const float_sw4* __restrict__ a_rho,
+			  const float_sw4* __restrict__ a_fo,
+			  const float_sw4* __restrict__ a_strx,
+			  const float_sw4* __restrict__ a_stry,
+			  const float_sw4* __restrict__ a_strz,
+			  const float_sw4 h,
+			  const float_sw4 dt) {
+  int index, i;
+
+  const float_sw4 i6   = 1.0/6;
+  const float_sw4 i144 = 1.0/144;
+  const float_sw4 tf   = 0.75;
+  
+  float_sw4 strx_im2, strx_im1, strx_i, strx_ip1, strx_ip2;
+  float_sw4 stry_jm2, stry_jm1, stry_j, stry_jp1, stry_jp2;
+  float_sw4 strz_km2, strz_km1, strz_k, strz_kp1, strz_kp2;
+
+  float_sw4 la_km2, la_km1, la_ijk, la_kp1, la_kp2;
+  float_sw4 la_im2, la_im1, la_ip1, la_ip2;
+  float_sw4 la_jm2, la_jm1, la_jp1, la_jp2;
+
+  float_sw4 mu_km2, mu_km1, mu_ijk, mu_kp1, mu_kp2;
+  float_sw4 mu_im2, mu_im1, mu_ip1, mu_ip2;
+  float_sw4 mu_jm2, mu_jm1, mu_jp1, mu_jp2;
+
+  float_sw4 r1, r2, r3;
+  int active=0, loadj1=0, loadj2=0, loadk1=0, loadk2=0, loadk3=0, loadk4=0;
+
+  // Shared memory for 3 wavefields, and for lambda / mu
+  __shared__ float_sw4 shm[3][12+4][16+4][2+4];
+
+  float_sw4 cof = 1.0 / (h * h);
+
+  // J and K start at (jfirst, kfirst)
+  const int j = jfirst + threadIdx.y + blockIdx.y * 16;
+  const int k = kfirst + threadIdx.z + blockIdx.z * 12;
+
+  // Natural thread mapping for the computation
+  const int ti = threadIdx.x + 2;
+  const int tj = threadIdx.y + 2;
+  const int tk = threadIdx.z + 2;
+
+  // Use the (6,16,4) mapping to load the data into shared memory
+  int tid = (threadIdx.z * 16 + threadIdx.y) * 2 + threadIdx.x;
+  int txload = (tid % 6);
+  int tyload = (tid / 6);
+  int tzload = tyload / 16;
+  tyload = tyload % 16;
+  
+  const int nij = ni * nj;
+  const int nijk = nij * nk;
+
+  // Active threads doing the computation
+  if (j <= jlast && k <= klast)
+    active = 1;
+
+  if (active) {
+    // Load stry centered at j
+    stry_jm2 = a_stry[j-2];
+    stry_jm1 = a_stry[j-1];
+    stry_j   = a_stry[j];
+    stry_jp1 = a_stry[j+1];
+    stry_jp2 = a_stry[j+2];
+    // Load strz centered at k
+    strz_km2 = a_strz[k-2];
+    strz_km1 = a_strz[k-1];
+    strz_k   = a_strz[k];
+    strz_kp1 = a_strz[k+1];
+    strz_kp2 = a_strz[k+2];
+  }
+
+  // Loading index, computed with the alternate thread mapping, starting at (jfirst-2, kfirst-2)
+  int jload, kload;
+  jload = blockIdx.y * 16 + tyload + jfirst - 2;
+  kload = blockIdx.z * 12 + tzload + kfirst - 2;
+
+  // We're loading 6x20x16 elements with 6x16x4 threads => 2 x 4 = 8 sections.
+  // Find out Which threads can load the data for the different sections
+  if (jload <= jlast+2) loadj1 = 1;
+  if (tyload < 4 && jload+16 <= jlast+2) loadj2 = 1;
+  if (kload <= klast+2) loadk1 = 1;
+  if (kload+4 <= klast+2) loadk2 = 1;
+  if (kload+8 <= klast+2) loadk3 = 1;
+  if (kload+12 <= klast+2) loadk4 = 1;
+
+  // Loop on the 2 sides
+#pragma unroll
+  for (int iside=0; iside < 2; iside++) {
+    
+    if (iside == 0) {
+      // ifirst side
+      index = (kload * nj + jload) * ni + ifirst - 2 + txload;
+      i = ifirst + threadIdx.x;
+    }
+    else {
+      // ilast side
+      index = (kload * nj + jload) * ni + ilast - 3 + txload;
+      i = ilast - 1 + threadIdx.x;
+    }
+    
+    // Load lambda and mu using the shared memory
+    if (loadj1) {
+      int idx = index;
+      if (loadk1) {
+	shm[0][tzload][tyload][txload] = a_lambda[idx];
+	shm[1][tzload][tyload][txload] = a_mu[idx];
+      }
+      idx += 4 * nij;
+      if (loadk2) {
+	shm[0][tzload+4][tyload][txload] = a_lambda[idx];
+	shm[1][tzload+4][tyload][txload] = a_mu[idx];
+      }
+      idx += 4 * nij;
+      if (loadk3) {
+	shm[0][tzload+8][tyload][txload] = a_lambda[idx];
+	shm[1][tzload+8][tyload][txload] = a_mu[idx];
+      }
+      idx += 4 * nij;
+      if (loadk4) {
+	shm[0][tzload+12][tyload][txload] = a_lambda[idx];
+	shm[1][tzload+12][tyload][txload] = a_mu[idx];
+      }
+    }
+    if (loadj2) {
+      int idx = index + 16 * ni;
+      if (loadk1) {
+	shm[0][tzload][tyload+16][txload] = a_lambda[idx];
+	shm[1][tzload][tyload+16][txload] = a_mu[idx];
+      }
+      idx += 4 * nij;
+      if (loadk2) {
+	shm[0][tzload+4][tyload+16][txload] = a_lambda[idx];
+	shm[1][tzload+4][tyload+16][txload] = a_mu[idx];
+      }
+      idx += 4 * nij;
+      if (loadk3) {
+	shm[0][tzload+8][tyload+16][txload] = a_lambda[idx];
+	shm[1][tzload+8][tyload+16][txload] = a_mu[idx];
+      }
+      idx += 4 * nij;
+      if (loadk4) {
+	shm[0][tzload+12][tyload+16][txload] = a_lambda[idx];
+	shm[1][tzload+12][tyload+16][txload] = a_mu[idx];
+      }
+    }
+    __syncthreads();
+    // Put lambda and mu in registers, using the natural thread mapping
+    la_km2 = shm[0][tk-2][tj][ti];
+    la_km1 = shm[0][tk-1][tj][ti];
+    la_ijk = shm[0][tk  ][tj][ti];
+    la_kp1 = shm[0][tk+1][tj][ti];
+    la_kp2 = shm[0][tk+2][tj][ti];
+
+    la_jm2 = shm[0][tk][tj-2][ti];
+    la_jm1 = shm[0][tk][tj-1][ti];
+    la_jp1 = shm[0][tk][tj+1][ti];
+    la_jp2 = shm[0][tk][tj+2][ti];
+
+    la_im2 = shm[0][tk][tj][ti-2];
+    la_im1 = shm[0][tk][tj][ti-1];
+    la_ip1 = shm[0][tk][tj][ti+1];
+    la_ip2 = shm[0][tk][tj][ti+2];
+
+    mu_km2 = shm[1][tk-2][tj][ti];
+    mu_km1 = shm[1][tk-1][tj][ti];
+    mu_ijk = shm[1][tk  ][tj][ti];
+    mu_kp1 = shm[1][tk+1][tj][ti];
+    mu_kp2 = shm[1][tk+2][tj][ti];
+
+    mu_jm2 = shm[1][tk][tj-2][ti];
+    mu_jm1 = shm[1][tk][tj-1][ti];
+    mu_jp1 = shm[1][tk][tj+1][ti];
+    mu_jp2 = shm[1][tk][tj+2][ti];
+
+    mu_im2 = shm[1][tk][tj][ti-2];
+    mu_im1 = shm[1][tk][tj][ti-1];
+    mu_ip1 = shm[1][tk][tj][ti+1];
+    mu_ip2 = shm[1][tk][tj][ti+2];
+    __syncthreads();
+
+    // Load the 3 wavefields to shared memory
+    if (loadj1) {
+      int idx = index;
+      if (loadk1) {
+	shm[0][tzload][tyload][txload] = u(0,idx);
+	shm[1][tzload][tyload][txload] = u(1,idx);
+	shm[2][tzload][tyload][txload] = u(2,idx);
+      }
+      idx += 4 * nij;
+      if (loadk2) {
+	shm[0][tzload+4][tyload][txload] = u(0,idx);
+	shm[1][tzload+4][tyload][txload] = u(1,idx);
+	shm[2][tzload+4][tyload][txload] = u(2,idx);
+      }
+      idx += 4 * nij;
+      if (loadk3) {
+	shm[0][tzload+8][tyload][txload] = u(0,idx);
+	shm[1][tzload+8][tyload][txload] = u(1,idx);
+	shm[2][tzload+8][tyload][txload] = u(2,idx);
+      }
+      idx += 4 * nij;
+      if (loadk4) {
+	shm[0][tzload+12][tyload][txload] = u(0,idx);
+	shm[1][tzload+12][tyload][txload] = u(1,idx);
+	shm[2][tzload+12][tyload][txload] = u(2,idx);
+      }
+    }
+    if (loadj2) {
+      int idx = index + 16 * ni;
+      if (loadk1) {
+	shm[0][tzload][tyload+16][txload] = u(0,idx);
+	shm[1][tzload][tyload+16][txload] = u(1,idx);
+	shm[2][tzload][tyload+16][txload] = u(2,idx);
+      }
+      idx += 4 * nij;
+      if (loadk2) {
+	shm[0][tzload+4][tyload+16][txload] = u(0,idx);
+	shm[1][tzload+4][tyload+16][txload] = u(1,idx);
+	shm[2][tzload+4][tyload+16][txload] = u(2,idx);
+      }
+      idx += 4 * nij;
+      if (loadk3) {
+	shm[0][tzload+8][tyload+16][txload] = u(0,idx);
+	shm[1][tzload+8][tyload+16][txload] = u(1,idx);
+	shm[2][tzload+8][tyload+16][txload] = u(2,idx);
+      }
+      idx += 4 * nij;
+      if (loadk4) {
+	shm[0][tzload+12][tyload+16][txload] = u(0,idx);
+	shm[1][tzload+12][tyload+16][txload] = u(1,idx);
+	shm[2][tzload+12][tyload+16][txload] = u(2,idx);
+      }
+    }
+    __syncthreads();
+
+    if (active) {
+
+      // Load strx centered at i
+      strx_im2 = a_strx[i-2];
+      strx_im1 = a_strx[i-1];
+      strx_i   = a_strx[i];
+      strx_ip1 = a_strx[i+1];
+      strx_ip2 = a_strx[i+2];
+    
+      // X contribution
+      {
+	float_sw4 mux1, mux2, mux3, mux4;
+	mux1 = mu_im1 * strx_im1 - tf * (mu_ijk * strx_i + mu_im2 * strx_im2);
+	mux2 = mu_im2 * strx_im2 + mu_ip1 * strx_ip1 + 3 * (mu_ijk * strx_i   + mu_im1 * strx_im1);
+	mux3 = mu_im1 * strx_im1 + mu_ip2 * strx_ip2 + 3 * (mu_ip1 * strx_ip1 + mu_ijk * strx_i  );
+	mux4 = mu_ip1 * strx_ip1 - tf * (mu_ijk * strx_i + mu_ip2 * strx_ip2);
+
+	r1 = strx_i * ((2 * mux1 + la_im1 * strx_im1 - tf * (la_ijk * strx_i   + la_im2 * strx_im2)) *
+		       (shm[0][tk+0][tj+0][ti-2] - shm[0][tk+0][tj+0][ti+0])+
+		       (2 * mux2 + la_im2 * strx_im2 + la_ip1 * strx_ip1 +
+			3 * (la_ijk * strx_i   + la_im1 * strx_im1)) *
+		       (shm[0][tk+0][tj+0][ti-1] - shm[0][tk+0][tj+0][ti+0]) +
+		       (2 * mux3 + la_im1 * strx_im1 + la_ip2 * strx_ip2 +
+			3 * (la_ip1 * strx_ip1 + la_ijk * strx_i  )) *
+		       (shm[0][tk+0][tj+0][ti+1] - shm[0][tk+0][tj+0][ti+0]) +
+		       (2 * mux4 + la_ip1 * strx_ip1 - tf * (la_ijk * strx_i   + la_ip2 * strx_ip2)) *
+		       (shm[0][tk+0][tj+0][ti+2] - shm[0][tk+0][tj+0][ti+0]));
+	r2 = strx_i * (mux1 * (shm[1][tk+0][tj+0][ti-2] - shm[1][tk+0][tj+0][ti+0]) +
+		       mux2 * (shm[1][tk+0][tj+0][ti-1] - shm[1][tk+0][tj+0][ti+0]) +
+		       mux3 * (shm[1][tk+0][tj+0][ti+1] - shm[1][tk+0][tj+0][ti+0]) +
+		       mux4 * (shm[1][tk+0][tj+0][ti+2] - shm[1][tk+0][tj+0][ti+0]));
+	r3 = strx_i * (mux1 * (shm[2][tk+0][tj+0][ti-2] - shm[2][tk+0][tj+0][ti+0]) +
+		       mux2 * (shm[2][tk+0][tj+0][ti-1] - shm[2][tk+0][tj+0][ti+0]) +
+		       mux3 * (shm[2][tk+0][tj+0][ti+1] - shm[2][tk+0][tj+0][ti+0]) +
+		       mux4 * (shm[2][tk+0][tj+0][ti+2] - shm[2][tk+0][tj+0][ti+0]));
+      }
+      // Y contribution
+      {
+	float_sw4 muy1, muy2, muy3, muy4;
+	muy1 = mu_jm1 * stry_jm1 - tf * (mu_ijk * stry_j + mu_jm2 * stry_jm2);
+	muy2 = mu_jm2 * stry_jm2 + mu_jp1 * stry_jp1 + 3 * (mu_ijk * stry_j   + mu_jm1 * stry_jm1);
+	muy3 = mu_jm1 * stry_jm1 + mu_jp2 * stry_jp2 + 3 * (mu_jp1 * stry_jp1 + mu_ijk * stry_j  );
+	muy4 = mu_jp1 * stry_jp1 - tf * (mu_ijk * stry_j + mu_jp2 * stry_jp2);
+
+	r1 += stry_j * (muy1 * (shm[0][tk+0][tj-2][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muy2 * (shm[0][tk+0][tj-1][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muy3 * (shm[0][tk+0][tj+1][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muy4 * (shm[0][tk+0][tj+2][ti+0] - shm[0][tk+0][tj+0][ti+0]));
+	r2 += stry_j * ((2 * muy1 + la_jm1 * stry_jm1 - tf * (la_ijk * stry_j + la_jm2 * stry_jm2)) *
+			(shm[1][tk+0][tj-2][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			(2 * muy2 + la_jm2 * stry_jm2 + la_jp1 * stry_jp1 +
+			 3 * (la_ijk * stry_j   + la_jm1 * stry_jm1)) *
+			(shm[1][tk+0][tj-1][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			(2 * muy3 + la_jm1 * stry_jm1 + la_jp2 * stry_jp2 +
+			 3 * (la_jp1 * stry_jp1 + la_ijk * stry_j  )) *
+			(shm[1][tk+0][tj+1][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			(2 * muy4 + la_jp1 * stry_jp1 - tf * (la_ijk * stry_j  + la_jp2 * stry_jp2)) *
+			(shm[1][tk+0][tj+2][ti+0] - shm[1][tk+0][tj+0][ti+0]));
+	r3 += stry_j  *(muy1 * (shm[2][tk+0][tj-2][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			muy2 * (shm[2][tk+0][tj-1][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			muy3 * (shm[2][tk+0][tj+1][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			muy4 * (shm[2][tk+0][tj+2][ti+0] - shm[2][tk+0][tj+0][ti+0]));
+      }
+      // Z contribution
+      {
+	float_sw4 muz1, muz2, muz3, muz4;
+	muz1 = mu_km1 * strz_km1 - tf * (mu_ijk * strz_k + mu_km2 * strz_km2);
+	muz2 = mu_km2 * strz_km2 + mu_kp1 * strz_kp1 + 3 * (mu_ijk * strz_k   + mu_km1 * strz_km1);
+	muz3 = mu_km1 * strz_km1 + mu_kp2 * strz_kp2 + 3 * (mu_kp1 * strz_kp1 + mu_ijk * strz_k);
+	muz4 = mu_kp1 * strz_kp1 - tf * (mu_ijk * strz_k + mu_kp2 * strz_kp2);
+	r1 += strz_k * (muz1 * (shm[0][tk-2][tj+0][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muz2 * (shm[0][tk-1][tj+0][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muz3 * (shm[0][tk+1][tj+0][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muz4 * (shm[0][tk+2][tj+0][ti+0] - shm[0][tk+0][tj+0][ti+0]));
+	r2 += strz_k * (muz1 * (shm[1][tk-2][tj+0][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			muz2 * (shm[1][tk-1][tj+0][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			muz3 * (shm[1][tk+1][tj+0][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			muz4 * (shm[1][tk+2][tj+0][ti+0] - shm[1][tk+0][tj+0][ti+0]));
+	r3 += strz_k * ((2 * muz1 + la_km1 * strz_km1 - tf * (la_ijk * strz_k + la_km2 * strz_km2)) *
+			(shm[2][tk-2][tj+0][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			(2 * muz2 + la_km2 * strz_km2 + la_kp1 * strz_kp1 +
+			 3 * (la_ijk * strz_k   + la_km1 * strz_km1)) *
+			(shm[2][tk-1][tj+0][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			(2 * muz3 + la_km1 * strz_km1 + la_kp2 * strz_kp2 +
+			 3 * (la_kp1 * strz_kp1 + la_ijk * strz_k  )) *
+			(shm[2][tk+1][tj+0][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			(2 * muz4 + la_kp1 * strz_kp1 - tf * (la_ijk * strz_k + la_kp2 * strz_kp2)) *
+			(shm[2][tk+2][tj+0][ti+0] - shm[2][tk+0][tj+0][ti+0]));
+      }
+      r1 *= i6;
+      r2 *= i6;
+      r3 *= i6;
+
+
+      /* Mixed derivatives: */
+      /*   (la*v_y)_x */
+      r1 += strx_i  * stry_j * i144 * 
+	(la_im2 * (shm[1][tk+0][tj-2][ti-2] - shm[1][tk+0][tj+2][ti-2] + 8 *
+		   (-shm[1][tk+0][tj-1][ti-2] + shm[1][tk+0][tj+1][ti-2])) - 8 *
+	 (la_im1 * (shm[1][tk+0][tj-2][ti-1] - shm[1][tk+0][tj+2][ti-1] + 8 *
+		   (-shm[1][tk+0][tj-1][ti-1] + shm[1][tk+0][tj+1][ti-1]))) + 8 *
+	 (la_ip1 * (shm[1][tk+0][tj-2][ti+1] - shm[1][tk+0][tj+2][ti+1] + 8 *
+		   (-shm[1][tk+0][tj-1][ti+1] + shm[1][tk+0][tj+1][ti+1]))) - 
+	 (la_ip2 * (shm[1][tk+0][tj-2][ti+2] - shm[1][tk+0][tj+2][ti+2] + 8 *
+		   (-shm[1][tk+0][tj-1][ti+2] + shm[1][tk+0][tj+1][ti+2]))))
+	/*   (la*w_z)_x */
+        + strx_i * strz_k * i144 *
+	(la_im2 * (shm[2][tk-2][tj+0][ti-2] - shm[2][tk+2][tj+0][ti-2] + 8 *
+		   (-shm[2][tk-1][tj+0][ti-2] + shm[2][tk+1][tj+0][ti-2])) - 8 *
+	 (la_im1 * (shm[2][tk-2][tj+0][ti-1] - shm[2][tk+2][tj+0][ti-1] + 8 *
+		   (-shm[2][tk-1][tj+0][ti-1] + shm[2][tk+1][tj+0][ti-1]))) + 8 *
+	 (la_ip1 * (shm[2][tk-2][tj+0][ti+1] - shm[2][tk+2][tj+0][ti+1] + 8 *
+		   (-shm[2][tk-1][tj+0][ti+1] + shm[2][tk+1][tj+0][ti+1]))) - 
+	 (la_ip2 * (shm[2][tk-2][tj+0][ti+2] - shm[2][tk+2][tj+0][ti+2] + 8 *
+		   (-shm[2][tk-1][tj+0][ti+2] + shm[2][tk+1][tj+0][ti+2]))))
+	/*   (mu*v_x)_y */
+        + strx_i * stry_j * i144 *
+	(mu_jm2 * (shm[1][tk+0][tj-2][ti-2] - shm[1][tk+0][tj-2][ti+2] + 8 *
+		   (-shm[1][tk+0][tj-2][ti-1] + shm[1][tk+0][tj-2][ti+1])) - 8 *
+	 (mu_jm1 * (shm[1][tk+0][tj-1][ti-2] - shm[1][tk+0][tj-1][ti+2] + 8 *
+		   (-shm[1][tk+0][tj-1][ti-1] + shm[1][tk+0][tj-1][ti+1]))) + 8 *
+	 (mu_jp1 * (shm[1][tk+0][tj+1][ti-2] - shm[1][tk+0][tj+1][ti+2] + 8 *
+		   (-shm[1][tk+0][tj+1][ti-1] + shm[1][tk+0][tj+1][ti+1]))) - 
+	 (mu_jp2 * (shm[1][tk+0][tj+2][ti-2] - shm[1][tk+0][tj+2][ti+2] + 8 *
+		   (-shm[1][tk+0][tj+2][ti-1] + shm[1][tk+0][tj+2][ti+1]))))
+	/*   (mu*w_x)_z */
+        + strx_i * strz_k * i144 *
+	(mu_km2 * (shm[2][tk-2][tj+0][ti-2] - shm[2][tk-2][tj+0][ti+2] + 8 *
+		   (-shm[2][tk-2][tj+0][ti-1] + shm[2][tk-2][tj+0][ti+1])) - 8 *
+ 	 (mu_km1 * (shm[2][tk-1][tj+0][ti-2] - shm[2][tk-1][tj+0][ti+2] + 8 *
+		   (-shm[2][tk-1][tj+0][ti-1] + shm[2][tk-1][tj+0][ti+1]))) + 8 *
+ 	 (mu_kp1 * (shm[2][tk+1][tj+0][ti-2] - shm[2][tk+1][tj+0][ti+2] + 8 *
+		   (-shm[2][tk+1][tj+0][ti-1] + shm[2][tk+1][tj+0][ti+1]))) -
+	 (mu_kp2 * (shm[2][tk+2][tj+0][ti-2] - shm[2][tk+2][tj+0][ti+2] + 8 *
+		   (-shm[2][tk+2][tj+0][ti-1] + shm[2][tk+2][tj+0][ti+1]))));
+
+      /*   (mu*u_y)_x */
+      r2 += strx_i  *stry_j  *i144*
+	(mu_im2 * (shm[0][tk+0][tj-2][ti-2] - shm[0][tk+0][tj+2][ti-2] + 8 *
+		   (-shm[0][tk+0][tj-1][ti-2] + shm[0][tk+0][tj+1][ti-2])) - 8 *
+	 (mu_im1 * (shm[0][tk+0][tj-2][ti-1] - shm[0][tk+0][tj+2][ti-1] + 8 *
+		   (-shm[0][tk+0][tj-1][ti-1] + shm[0][tk+0][tj+1][ti-1]))) + 8 *
+	 (mu_ip1 * (shm[0][tk+0][tj-2][ti+1] - shm[0][tk+0][tj+2][ti+1] + 8 *
+		   (-shm[0][tk+0][tj-1][ti+1] + shm[0][tk+0][tj+1][ti+1]))) -
+	 (mu_ip2 * (shm[0][tk+0][tj-2][ti+2] - shm[0][tk+0][tj+2][ti+2] + 8 *
+		   (-shm[0][tk+0][tj-1][ti+2] + shm[0][tk+0][tj+1][ti+2]))))
+	/* (la*u_x)_y */
+        + strx_i * stry_j * i144 *
+	(la_jm2 * (shm[0][tk+0][tj-2][ti-2] - shm[0][tk+0][tj-2][ti+2] + 8 *
+		   (-shm[0][tk+0][tj-2][ti-1] + shm[0][tk+0][tj-2][ti+1])) - 8 *
+	 (la_jm1 * (shm[0][tk+0][tj-1][ti-2] - shm[0][tk+0][tj-1][ti+2] + 8 *
+		   (-shm[0][tk+0][tj-1][ti-1] + shm[0][tk+0][tj-1][ti+1]))) + 8 *
+	 (la_jp1 * (shm[0][tk+0][tj+1][ti-2] - shm[0][tk+0][tj+1][ti+2] + 8 *
+		   (-shm[0][tk+0][tj+1][ti-1] + shm[0][tk+0][tj+1][ti+1]))) -
+	 (la_jp2 * (shm[0][tk+0][tj+2][ti-2] - shm[0][tk+0][tj+2][ti+2] + 8 *
+		   (-shm[0][tk+0][tj+2][ti-1] + shm[0][tk+0][tj+2][ti+1]))))
+	/* (la*w_z)_y */
+        + stry_j * strz_k * i144 *
+	(la_jm2 * (shm[2][tk-2][tj-2][ti+0] - shm[2][tk+2][tj-2][ti+0] + 8 *
+		   (-shm[2][tk-1][tj-2][ti+0] + shm[2][tk+1][tj-2][ti+0])) - 8 *
+	 (la_jm1 * (shm[2][tk-2][tj-1][ti+0] - shm[2][tk+2][tj-1][ti+0] + 8 *
+		   (-shm[2][tk-1][tj-1][ti+0] + shm[2][tk+1][tj-1][ti+0]))) + 8 *
+	 (la_jp1 * (shm[2][tk-2][tj+1][ti+0] - shm[2][tk+2][tj+1][ti+0] + 8 *
+		   (-shm[2][tk-1][tj+1][ti+0] + shm[2][tk+1][tj+1][ti+0]))) -
+	 (la_jp2 * (shm[2][tk-2][tj+2][ti+0] - shm[2][tk+2][tj+2][ti+0] + 8 *
+		   (-shm[2][tk-1][tj+2][ti+0] + shm[2][tk+1][tj+2][ti+0]))))
+	/* (mu*w_y)_z */
+        + stry_j * strz_k * i144 *
+	(mu_km2 * (shm[2][tk-2][tj-2][ti+0] - shm[2][tk-2][tj+2][ti+0] + 8 *
+		   (-shm[2][tk-2][tj-1][ti+0] + shm[2][tk-2][tj+1][ti+0])) - 8 *
+	 (mu_km1 * (shm[2][tk-1][tj-2][ti+0] - shm[2][tk-1][tj+2][ti+0] + 8 *
+		   (-shm[2][tk-1][tj-1][ti+0] + shm[2][tk-1][tj+1][ti+0]))) + 8 *
+	 (mu_kp1 * (shm[2][tk+1][tj-2][ti+0] - shm[2][tk+1][tj+2][ti+0] + 8 *
+		   (-shm[2][tk+1][tj-1][ti+0] + shm[2][tk+1][tj+1][ti+0]))) -
+	 (mu_kp2 * (shm[2][tk+2][tj-2][ti+0] - shm[2][tk+2][tj+2][ti+0] + 8 *
+		   (-shm[2][tk+2][tj-1][ti+0] + shm[2][tk+2][tj+1][ti+0]))));
+
+      /*  (mu*u_z)_x */
+      r3 += strx_i * strz_k * i144 *
+	(mu_im2 * (shm[0][tk-2][tj+0][ti-2] - shm[0][tk+2][tj+0][ti-2] + 8 *
+		   (-shm[0][tk-1][tj+0][ti-2] + shm[0][tk+1][tj+0][ti-2])) - 8 *
+	 (mu_im1 * (shm[0][tk-2][tj+0][ti-1] - shm[0][tk+2][tj+0][ti-1] + 8 *
+		   (-shm[0][tk-1][tj+0][ti-1] + shm[0][tk+1][tj+0][ti-1]))) + 8 *
+	 (mu_ip1 * (shm[0][tk-2][tj+0][ti+1] - shm[0][tk+2][tj+0][ti+1] + 8 *
+		   (-shm[0][tk-1][tj+0][ti+1] + shm[0][tk+1][tj+0][ti+1]))) -
+	 (mu_ip2 * (shm[0][tk-2][tj+0][ti+2] - shm[0][tk+2][tj+0][ti+2] + 8 *
+		   (-shm[0][tk-1][tj+0][ti+2] + shm[0][tk+1][tj+0][ti+2]))))
+	/* (mu*v_z)_y */
+        + stry_j  *strz_k*i144*
+	(mu_jm2 * (shm[1][tk-2][tj-2][ti+0] - shm[1][tk+2][tj-2][ti+0] + 8 *
+		   (- shm[1][tk-1][tj-2][ti+0]+shm[1][tk+1][tj-2][ti+0])) - 8 * 
+	 (mu_jm1 * (shm[1][tk-2][tj-1][ti+0] - shm[1][tk+2][tj-1][ti+0] + 8 *
+		   (- shm[1][tk-1][tj-1][ti+0]+shm[1][tk+1][tj-1][ti+0]))) + 8 * 
+	 (mu_jp1 * (shm[1][tk-2][tj+1][ti+0] - shm[1][tk+2][tj+1][ti+0] + 8 *
+		   (- shm[1][tk-1][tj+1][ti+0]+shm[1][tk+1][tj+1][ti+0]))) -
+	 (mu_jp2 * (shm[1][tk-2][tj+2][ti+0] - shm[1][tk+2][tj+2][ti+0] + 8 *
+		   (- shm[1][tk-1][tj+2][ti+0]+shm[1][tk+1][tj+2][ti+0]))))
+	/*   (la*u_x)_z */
+        + strx_i  *strz_k*i144*
+	(la_km2*(shm[0][tk-2][tj+0][ti-2] - shm[0][tk-2][tj+0][ti+2] + 8 *
+		   (- shm[0][tk-2][tj+0][ti-1]+shm[0][tk-2][tj+0][ti+1])) - 8*
+	 (la_km1*(shm[0][tk-1][tj+0][ti-2] - shm[0][tk-1][tj+0][ti+2] + 8 *
+		   (- shm[0][tk-1][tj+0][ti-1]+shm[0][tk-1][tj+0][ti+1]))) + 8*
+	 (la_kp1*(shm[0][tk+1][tj+0][ti-2] - shm[0][tk+1][tj+0][ti+2] + 8 *
+		   (- shm[0][tk+1][tj+0][ti-1]+shm[0][tk+1][tj+0][ti+1]))) -
+	 (la_kp2*(shm[0][tk+2][tj+0][ti-2] - shm[0][tk+2][tj+0][ti+2] + 8 *
+		   (- shm[0][tk+2][tj+0][ti-1]+shm[0][tk+2][tj+0][ti+1]))))
+	/* (la*v_y)_z */
+        + stry_j  *strz_k*i144*
+	(la_km2*(shm[1][tk-2][tj-2][ti+0] - shm[1][tk-2][tj+2][ti+0] + 8 *
+		   (- shm[1][tk-2][tj-1][ti+0]+shm[1][tk-2][tj+1][ti+0])) - 8*
+	 (la_km1*(shm[1][tk-1][tj-2][ti+0] - shm[1][tk-1][tj+2][ti+0] + 8 *
+		   (- shm[1][tk-1][tj-1][ti+0]+shm[1][tk-1][tj+1][ti+0]))) + 8*
+	 (la_kp1*(shm[1][tk+1][tj-2][ti+0] - shm[1][tk+1][tj+2][ti+0] + 8 *
+		   (- shm[1][tk+1][tj-1][ti+0]+shm[1][tk+1][tj+1][ti+0]))) -
+	 (la_kp2*(shm[1][tk+2][tj-2][ti+0] - shm[1][tk+2][tj+2][ti+0] + 8 *
+		   (- shm[1][tk+2][tj-1][ti+0]+shm[1][tk+2][tj+1][ti+0]))));
+
+      // Use the result at point (i,j,k)
+      if (pred) {
+	// Apply predictor
+	int idx = k * nij + j * ni + i;
+	float_sw4 fact = dt*dt / a_rho[idx];
+	up(0,idx) = 2 * shm[0][tk][tj][ti] - um(0,idx) + fact * (cof * r1 + fo(0,idx));
+	up(1,idx) = 2 * shm[1][tk][tj][ti] - um(1,idx) + fact * (cof * r2 + fo(1,idx));
+	up(2,idx) = 2 * shm[2][tk][tj][ti] - um(2,idx) + fact * (cof * r3 + fo(2,idx));
+      }
+      else {
+	// Apply 4th order correction
+	int idx = k * nij + j * ni + i;
+	float_sw4 fact = dt*dt*dt*dt / (12 * a_rho[idx]);
+	up(0,idx) += fact * (cof * r1 + fo(0,idx));
+	up(1,idx) += fact * (cof * r2 + fo(1,idx));
+	up(2,idx) += fact * (cof * r3 + fo(2,idx));
+      }
+
+    }  // End active
+    
+    if (iside == 0)
+      __syncthreads();
+    
+  } // End side loop
+}
+
+// *************************************************************************************
+// Kernel launcher
+
+void rhs4_X_pred_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      int ni, int nj, int nk,
+		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um,
+		      float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo, 
+		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
+		      float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream) {
+
+  // Launch enough threads to cover [jfirst:jlast][kfirst:klast]
+  int njcomp = jlast - jfirst + 1;
+  int nkcomp = klast - kfirst + 1;
+
+  // 384 threads as 2x16x12, they will also be used as 6x16x4 inside the kernel
+  dim3 blocks = dim3(1, (njcomp+15)/16, (nkcomp+11)/12);
+  dim3 threads = dim3(2, 16, 12);
+  if (c_order)
+    rhs4_X<1,1><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast, kfirst, klast,
+       ni, nj, nk,
+       a_up, a_u, a_um,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, a_strz, h, dt);
+  else
+    rhs4_X<0,1><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast, kfirst, klast,
+       ni, nj, nk,
+       a_up, a_u, a_um,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, a_strz, h, dt);
+}
+
+void rhs4_X_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      int ni, int nj, int nk,
+		      float_sw4* a_up, float_sw4* a_u,
+		      float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo, 
+		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
+		      float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream) {
+
+  // Launch enough threads to cover [jfirst:jlast][kfirst:klast]
+  int njcomp = jlast - jfirst + 1;
+  int nkcomp = klast - kfirst + 1;
+
+  // 384 threads as 2x16x12, they will also be used as 6x16x4 inside the kernel
+  dim3 blocks = dim3(1, (njcomp+15)/16, (nkcomp+11)/12);
+  dim3 threads = dim3(2, 16, 12);
+  if (c_order)
+    rhs4_X<1,0><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast, kfirst, klast,
+       ni, nj, nk,
+       a_up, a_u, NULL,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, a_strz, h, dt);
+  else
+    rhs4_X<0,0><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast, kfirst, klast,
+       ni, nj, nk,
+       a_up, a_u, NULL,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, a_strz, h, dt);
+}
+
+// *************************************************************************************
+// *************************************************************************************
+// *************************************************************************************
+// RHS4 Y halos :
+// --------------
+// Compute RHS4 in the halos, for each side in the Y dimension.
+// Use blocks of (BX,2,4) threads, and launch enough threads to cover the whole
+// volume (0:ni-1, jfirst:jlast, kfirst:klast).
+// The block of (BX,2,4) threads allows to load (BX+4,6,8) elements in shared memory
+// relatively easily, while keeping enough blocks to load the GPU.
+
+template <bool c_order, bool pred>
+__launch_bounds__(BX*8)
+  __global__ void rhs4_Y (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+			  int ni, int nj, int nk,
+			  float_sw4* __restrict__ a_up,
+			  const float_sw4* __restrict__ a_u,
+			  const float_sw4* __restrict__ a_um,
+			  const float_sw4* __restrict__ a_mu,
+			  const float_sw4* __restrict__ a_lambda,
+			  const float_sw4* __restrict__ a_rho,
+			  const float_sw4* __restrict__ a_fo,
+			  const float_sw4* __restrict__ a_strx,
+			  const float_sw4* __restrict__ a_stry,
+			  const float_sw4* __restrict__ a_strz,
+			  const float_sw4 h,
+			  const float_sw4 dt) {
+  int index, j;
+
+  const float_sw4 i6   = 1.0/6;
+  const float_sw4 i144 = 1.0/144;
+  const float_sw4 tf   = 0.75;
+  
+  float_sw4 strx_im2, strx_im1, strx_i, strx_ip1, strx_ip2;
+  float_sw4 stry_jm2, stry_jm1, stry_j, stry_jp1, stry_jp2;
+  float_sw4 strz_km2, strz_km1, strz_k, strz_kp1, strz_kp2;
+
+  float_sw4 la_km2, la_km1, la_ijk, la_kp1, la_kp2;
+  float_sw4 la_im2, la_im1, la_ip1, la_ip2;
+  float_sw4 la_jm2, la_jm1, la_jp1, la_jp2;
+
+  float_sw4 mu_km2, mu_km1, mu_ijk, mu_kp1, mu_kp2;
+  float_sw4 mu_im2, mu_im1, mu_ip1, mu_ip2;
+  float_sw4 mu_jm2, mu_jm1, mu_jp1, mu_jp2;
+
+  float_sw4 r1, r2, r3;
+  int active=0, loader=0, loadx2=0, loadk2=0;
+
+  __shared__ float_sw4 shm[3][8][6][BX+4];
+
+  float_sw4 cof = 1.0 / (h * h);
+
+  // I starts at 0 and covers the whole dimension
+  const int i = threadIdx.x + blockIdx.x * BX;
+  // K starts at kfirst
+  const int k = kfirst + threadIdx.z + blockIdx.z * 4;
+
+  const int ti = threadIdx.x + 2;
+  const int tj = threadIdx.y + 2;
+  const int tk = threadIdx.z + 2;
+  
+  const int nij = ni * nj;
+  const int nijk = nij * nk;
+
+  // Active threads doing the computation at (i+2,j,k)
+  if (i+2 >= ifirst && i+2 <= ilast && k <= klast)
+    active = 1;
+
+  if (i < ni && k-2 <= klast+2) {
+    loader = 1;
+    if (threadIdx.x < 4 && i+BX < ni)
+      loadx2 = 1;
+    if (k <= klast) // (k+4-2 <= klast+2)
+      loadk2 = 1;
+  }
+
+  if (active) {
+    // Load strx & strz, centered at i+2 and k
+    strx_im2 = a_strx[i];
+    strx_im1 = a_strx[i+1];
+    strx_i   = a_strx[i+2];
+    strx_ip1 = a_strx[i+3];
+    strx_ip2 = a_strx[i+4];
+
+    strz_km2 = a_strz[k-2];
+    strz_km1 = a_strz[k-1];
+    strz_k   = a_strz[k];
+    strz_kp1 = a_strz[k+1];
+    strz_kp2 = a_strz[k+2];
+  }
+
+  // Loop on the 2 sides
+#pragma unroll
+  for (int iside=0; iside < 2; iside++) {
+
+    if (iside == 0)
+      j = jfirst + threadIdx.y;
+    else
+      j = jlast - 1 + threadIdx.y;
+
+    index = (k - 2) * nij + (j - 2) * ni + i;
+
+    // Load lambda and mu in the shared memory
+    if (loader) {
+      int idx = index;
+      shm[0][threadIdx.z][threadIdx.y][threadIdx.x] = a_lambda[idx];
+      shm[1][threadIdx.z][threadIdx.y][threadIdx.x] = a_mu[idx];
+      idx += 2 * ni;
+      shm[0][threadIdx.z][threadIdx.y+2][threadIdx.x] = a_lambda[idx];
+      shm[1][threadIdx.z][threadIdx.y+2][threadIdx.x] = a_mu[idx];
+      idx += 2 * ni;
+      shm[0][threadIdx.z][threadIdx.y+4][threadIdx.x] = a_lambda[idx];
+      shm[1][threadIdx.z][threadIdx.y+4][threadIdx.x] = a_mu[idx];
+    }
+    if (loadx2) {
+      int idx = index + BX;
+      shm[0][threadIdx.z][threadIdx.y][threadIdx.x+BX] = a_lambda[idx];
+      shm[1][threadIdx.z][threadIdx.y][threadIdx.x+BX] = a_mu[idx];
+      idx += 2 * ni;
+      shm[0][threadIdx.z][threadIdx.y+2][threadIdx.x+BX] = a_lambda[idx];
+      shm[1][threadIdx.z][threadIdx.y+2][threadIdx.x+BX] = a_mu[idx];
+      idx += 2 * ni;
+      shm[0][threadIdx.z][threadIdx.y+4][threadIdx.x+BX] = a_lambda[idx];
+      shm[1][threadIdx.z][threadIdx.y+4][threadIdx.x+BX] = a_mu[idx];
+    }
+    if (loadk2) {
+      int idx = index + 4 * nij;
+      shm[0][threadIdx.z+4][threadIdx.y][threadIdx.x] = a_lambda[idx];
+      shm[1][threadIdx.z+4][threadIdx.y][threadIdx.x] = a_mu[idx];
+      idx += 2 * ni;
+      shm[0][threadIdx.z+4][threadIdx.y+2][threadIdx.x] = a_lambda[idx];
+      shm[1][threadIdx.z+4][threadIdx.y+2][threadIdx.x] = a_mu[idx];
+      idx += 2 * ni;
+      shm[0][threadIdx.z+4][threadIdx.y+4][threadIdx.x] = a_lambda[idx];
+      shm[1][threadIdx.z+4][threadIdx.y+4][threadIdx.x] = a_mu[idx];
+    }
+    if (loadk2 && loadx2) {
+      int idx = index + 4 * nij + BX;
+      shm[0][threadIdx.z+4][threadIdx.y][threadIdx.x+BX] = a_lambda[idx];
+      shm[1][threadIdx.z+4][threadIdx.y][threadIdx.x+BX] = a_mu[idx];
+      idx += 2 * ni;
+      shm[0][threadIdx.z+4][threadIdx.y+2][threadIdx.x+BX] = a_lambda[idx];
+      shm[1][threadIdx.z+4][threadIdx.y+2][threadIdx.x+BX] = a_mu[idx];
+      idx += 2 * ni;
+      shm[0][threadIdx.z+4][threadIdx.y+4][threadIdx.x+BX] = a_lambda[idx];
+      shm[1][threadIdx.z+4][threadIdx.y+4][threadIdx.x+BX] = a_mu[idx];
+    }
+    __syncthreads();
+    // Put lambda and mu in registers, using the natural thread mapping
+    la_km2 = shm[0][tk-2][tj][ti];
+    la_km1 = shm[0][tk-1][tj][ti];
+    la_ijk = shm[0][tk  ][tj][ti];
+    la_kp1 = shm[0][tk+1][tj][ti];
+    la_kp2 = shm[0][tk+2][tj][ti];
+
+    la_jm2 = shm[0][tk][tj-2][ti];
+    la_jm1 = shm[0][tk][tj-1][ti];
+    la_jp1 = shm[0][tk][tj+1][ti];
+    la_jp2 = shm[0][tk][tj+2][ti];
+
+    la_im2 = shm[0][tk][tj][ti-2];
+    la_im1 = shm[0][tk][tj][ti-1];
+    la_ip1 = shm[0][tk][tj][ti+1];
+    la_ip2 = shm[0][tk][tj][ti+2];
+
+    mu_km2 = shm[1][tk-2][tj][ti];
+    mu_km1 = shm[1][tk-1][tj][ti];
+    mu_ijk = shm[1][tk  ][tj][ti];
+    mu_kp1 = shm[1][tk+1][tj][ti];
+    mu_kp2 = shm[1][tk+2][tj][ti];
+
+    mu_jm2 = shm[1][tk][tj-2][ti];
+    mu_jm1 = shm[1][tk][tj-1][ti];
+    mu_jp1 = shm[1][tk][tj+1][ti];
+    mu_jp2 = shm[1][tk][tj+2][ti];
+
+    mu_im2 = shm[1][tk][tj][ti-2];
+    mu_im1 = shm[1][tk][tj][ti-1];
+    mu_ip1 = shm[1][tk][tj][ti+1];
+    mu_ip2 = shm[1][tk][tj][ti+2];
+    __syncthreads();
+    
+    // Load U in the shared memory
+    if (loader) {
+      int idx = index;
+      shm[0][threadIdx.z][threadIdx.y][threadIdx.x] = u(0,idx);
+      shm[1][threadIdx.z][threadIdx.y][threadIdx.x] = u(1,idx);
+      shm[2][threadIdx.z][threadIdx.y][threadIdx.x] = u(2,idx);
+      idx += 2 * ni;
+      shm[0][threadIdx.z][threadIdx.y+2][threadIdx.x] = u(0,idx);
+      shm[1][threadIdx.z][threadIdx.y+2][threadIdx.x] = u(1,idx);
+      shm[2][threadIdx.z][threadIdx.y+2][threadIdx.x] = u(2,idx);
+      idx += 2 * ni;
+      shm[0][threadIdx.z][threadIdx.y+4][threadIdx.x] = u(0,idx);
+      shm[1][threadIdx.z][threadIdx.y+4][threadIdx.x] = u(1,idx);
+      shm[2][threadIdx.z][threadIdx.y+4][threadIdx.x] = u(2,idx);
+    }
+    if (loadx2) {
+      int idx = index + BX;
+      shm[0][threadIdx.z][threadIdx.y][threadIdx.x+BX] = u(0,idx);
+      shm[1][threadIdx.z][threadIdx.y][threadIdx.x+BX] = u(1,idx);
+      shm[2][threadIdx.z][threadIdx.y][threadIdx.x+BX] = u(2,idx);
+      idx += 2 * ni;
+      shm[0][threadIdx.z][threadIdx.y+2][threadIdx.x+BX] = u(0,idx);
+      shm[1][threadIdx.z][threadIdx.y+2][threadIdx.x+BX] = u(1,idx);
+      shm[2][threadIdx.z][threadIdx.y+2][threadIdx.x+BX] = u(2,idx);
+      idx += 2 * ni;
+      shm[0][threadIdx.z][threadIdx.y+4][threadIdx.x+BX] = u(0,idx);
+      shm[1][threadIdx.z][threadIdx.y+4][threadIdx.x+BX] = u(1,idx);
+      shm[2][threadIdx.z][threadIdx.y+4][threadIdx.x+BX] = u(2,idx);
+    }
+    if (loadk2) {
+      int idx = index + 4 * nij;
+      shm[0][threadIdx.z+4][threadIdx.y][threadIdx.x] = u(0,idx);
+      shm[1][threadIdx.z+4][threadIdx.y][threadIdx.x] = u(1,idx);
+      shm[2][threadIdx.z+4][threadIdx.y][threadIdx.x] = u(2,idx);
+      idx += 2 * ni;
+      shm[0][threadIdx.z+4][threadIdx.y+2][threadIdx.x] = u(0,idx);
+      shm[1][threadIdx.z+4][threadIdx.y+2][threadIdx.x] = u(1,idx);
+      shm[2][threadIdx.z+4][threadIdx.y+2][threadIdx.x] = u(2,idx);
+      idx += 2 * ni;
+      shm[0][threadIdx.z+4][threadIdx.y+4][threadIdx.x] = u(0,idx);
+      shm[1][threadIdx.z+4][threadIdx.y+4][threadIdx.x] = u(1,idx);
+      shm[2][threadIdx.z+4][threadIdx.y+4][threadIdx.x] = u(2,idx);
+    }
+    if (loadk2 && loadx2) {
+      int idx = index + 4 * nij + BX;
+      shm[0][threadIdx.z+4][threadIdx.y][threadIdx.x+BX] = u(0,idx);
+      shm[1][threadIdx.z+4][threadIdx.y][threadIdx.x+BX] = u(1,idx);
+      shm[2][threadIdx.z+4][threadIdx.y][threadIdx.x+BX] = u(2,idx);
+      idx += 2 * ni;
+      shm[0][threadIdx.z+4][threadIdx.y+2][threadIdx.x+BX] = u(0,idx);
+      shm[1][threadIdx.z+4][threadIdx.y+2][threadIdx.x+BX] = u(1,idx);
+      shm[2][threadIdx.z+4][threadIdx.y+2][threadIdx.x+BX] = u(2,idx);
+      idx += 2 * ni;
+      shm[0][threadIdx.z+4][threadIdx.y+4][threadIdx.x+BX] = u(0,idx);
+      shm[1][threadIdx.z+4][threadIdx.y+4][threadIdx.x+BX] = u(1,idx);
+      shm[2][threadIdx.z+4][threadIdx.y+4][threadIdx.x+BX] = u(2,idx);
+    }
+    __syncthreads();
+
+    if (active) {
+
+      // Load stry, centered at j
+      stry_jm2 = a_stry[j-2];
+      stry_jm1 = a_stry[j-1];
+      stry_j   = a_stry[j];
+      stry_jp1 = a_stry[j+1];
+      stry_jp2 = a_stry[j+2];
+
+      // X contribution
+      {
+	float_sw4 mux1, mux2, mux3, mux4;
+	mux1 = mu_im1 * strx_im1 - tf * (mu_ijk * strx_i + mu_im2 * strx_im2);
+	mux2 = mu_im2 * strx_im2 + mu_ip1 * strx_ip1 + 3 * (mu_ijk * strx_i   + mu_im1 * strx_im1);
+	mux3 = mu_im1 * strx_im1 + mu_ip2 * strx_ip2 + 3 * (mu_ip1 * strx_ip1 + mu_ijk * strx_i  );
+	mux4 = mu_ip1 * strx_ip1 - tf * (mu_ijk * strx_i + mu_ip2 * strx_ip2);
+
+	r1 = strx_i * ((2 * mux1 + la_im1 * strx_im1 - tf * (la_ijk * strx_i + la_im2 * strx_im2)) *
+		       (shm[0][tk+0][tj+0][ti-2] - shm[0][tk+0][tj+0][ti+0])+
+		       (2 * mux2 + la_im2 * strx_im2 + la_ip1 * strx_ip1 +
+			3 * (la_ijk * strx_i + la_im1 * strx_im1)) *
+		       (shm[0][tk+0][tj+0][ti-1] - shm[0][tk+0][tj+0][ti+0]) +
+		       (2 * mux3 + la_im1 * strx_im1 + la_ip2 * strx_ip2 +
+			3 * (la_ip1 * strx_ip1 + la_ijk * strx_i)) *
+		       (shm[0][tk+0][tj+0][ti+1] - shm[0][tk+0][tj+0][ti+0]) +
+		       (2 * mux4 + la_ip1 * strx_ip1 - tf * (la_ijk * strx_i + la_ip2 * strx_ip2)) *
+		       (shm[0][tk+0][tj+0][ti+2] - shm[0][tk+0][tj+0][ti+0]));
+	r2 = strx_i * (mux1 * (shm[1][tk+0][tj+0][ti-2] - shm[1][tk+0][tj+0][ti+0]) +
+		       mux2 * (shm[1][tk+0][tj+0][ti-1] - shm[1][tk+0][tj+0][ti+0]) +
+		       mux3 * (shm[1][tk+0][tj+0][ti+1] - shm[1][tk+0][tj+0][ti+0]) +
+		       mux4 * (shm[1][tk+0][tj+0][ti+2] - shm[1][tk+0][tj+0][ti+0]));
+	r3 = strx_i * (mux1 * (shm[2][tk+0][tj+0][ti-2] - shm[2][tk+0][tj+0][ti+0]) +
+		       mux2 * (shm[2][tk+0][tj+0][ti-1] - shm[2][tk+0][tj+0][ti+0]) +
+		       mux3 * (shm[2][tk+0][tj+0][ti+1] - shm[2][tk+0][tj+0][ti+0]) +
+		       mux4 * (shm[2][tk+0][tj+0][ti+2] - shm[2][tk+0][tj+0][ti+0]));
+      }
+      // Y contribution
+      {
+	float_sw4 muy1, muy2, muy3, muy4;
+	muy1 = mu_jm1 * stry_jm1 - tf * (mu_ijk * stry_j + mu_jm2 * stry_jm2);
+	muy2 = mu_jm2 * stry_jm2 + mu_jp1 * stry_jp1 + 3 * (mu_ijk * stry_j   + mu_jm1 * stry_jm1);
+	muy3 = mu_jm1 * stry_jm1 + mu_jp2 * stry_jp2 + 3 * (mu_jp1 * stry_jp1 + mu_ijk * stry_j  );
+	muy4 = mu_jp1 * stry_jp1 - tf * (mu_ijk * stry_j + mu_jp2 * stry_jp2);
+
+	r1 += stry_j * (muy1 * (shm[0][tk+0][tj-2][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muy2 * (shm[0][tk+0][tj-1][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muy3 * (shm[0][tk+0][tj+1][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muy4 * (shm[0][tk+0][tj+2][ti+0] - shm[0][tk+0][tj+0][ti+0]));
+	r2 += stry_j * ((2 * muy1 + la_jm1 * stry_jm1 - tf * (la_ijk * stry_j + la_jm2 * stry_jm2)) *
+			(shm[1][tk+0][tj-2][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			(2 * muy2 + la_jm2 * stry_jm2 + la_jp1 * stry_jp1 +
+			 3 * (la_ijk * stry_j   + la_jm1 * stry_jm1)) *
+			(shm[1][tk+0][tj-1][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			(2 * muy3 + la_jm1 * stry_jm1 + la_jp2 * stry_jp2 +
+			 3 * (la_jp1 * stry_jp1 + la_ijk * stry_j  )) *
+			(shm[1][tk+0][tj+1][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			(2 * muy4 + la_jp1 * stry_jp1 - tf * (la_ijk * stry_j  + la_jp2 * stry_jp2)) *
+			(shm[1][tk+0][tj+2][ti+0] - shm[1][tk+0][tj+0][ti+0]));
+	r3 += stry_j  *(muy1 * (shm[2][tk+0][tj-2][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			muy2 * (shm[2][tk+0][tj-1][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			muy3 * (shm[2][tk+0][tj+1][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			muy4 * (shm[2][tk+0][tj+2][ti+0] - shm[2][tk+0][tj+0][ti+0]));
+      }
+      // Z contribution
+      {
+	float_sw4 muz1, muz2, muz3, muz4;
+	muz1 = mu_km1 * strz_km1 - tf * (mu_ijk * strz_k + mu_km2 * strz_km2);
+	muz2 = mu_km2 * strz_km2 + mu_kp1 * strz_kp1 + 3 * (mu_ijk * strz_k   + mu_km1 * strz_km1);
+	muz3 = mu_km1 * strz_km1 + mu_kp2 * strz_kp2 + 3 * (mu_kp1 * strz_kp1 + mu_ijk * strz_k);
+	muz4 = mu_kp1 * strz_kp1 - tf * (mu_ijk * strz_k + mu_kp2 * strz_kp2);
+	r1 += strz_k * (muz1 * (shm[0][tk-2][tj+0][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muz2 * (shm[0][tk-1][tj+0][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muz3 * (shm[0][tk+1][tj+0][ti+0] - shm[0][tk+0][tj+0][ti+0]) +
+			muz4 * (shm[0][tk+2][tj+0][ti+0] - shm[0][tk+0][tj+0][ti+0]));
+	r2 += strz_k * (muz1 * (shm[1][tk-2][tj+0][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			muz2 * (shm[1][tk-1][tj+0][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			muz3 * (shm[1][tk+1][tj+0][ti+0] - shm[1][tk+0][tj+0][ti+0]) +
+			muz4 * (shm[1][tk+2][tj+0][ti+0] - shm[1][tk+0][tj+0][ti+0]));
+	r3 += strz_k * ((2 * muz1 + la_km1 * strz_km1 - tf * (la_ijk * strz_k + la_km2 * strz_km2)) *
+			(shm[2][tk-2][tj+0][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			(2 * muz2 + la_km2 * strz_km2 + la_kp1 * strz_kp1 +
+			 3 * (la_ijk * strz_k   + la_km1 * strz_km1)) *
+			(shm[2][tk-1][tj+0][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			(2 * muz3 + la_km1 * strz_km1 + la_kp2 * strz_kp2 +
+			 3 * (la_kp1 * strz_kp1 + la_ijk * strz_k  )) *
+			(shm[2][tk+1][tj+0][ti+0] - shm[2][tk+0][tj+0][ti+0]) +
+			(2 * muz4 + la_kp1 * strz_kp1 - tf * (la_ijk * strz_k + la_kp2 * strz_kp2)) *
+			(shm[2][tk+2][tj+0][ti+0] - shm[2][tk+0][tj+0][ti+0]));
+      }
+      r1 *= i6;
+      r2 *= i6;
+      r3 *= i6;
+
+
+      /* Mixed derivatives: */
+      /*   (la*v_y)_x */
+      r1 += strx_i  * stry_j * i144 * 
+	(la_im2 * (shm[1][tk+0][tj-2][ti-2] - shm[1][tk+0][tj+2][ti-2] + 8 *
+		   (-shm[1][tk+0][tj-1][ti-2] + shm[1][tk+0][tj+1][ti-2])) - 8 *
+	 (la_im1 * (shm[1][tk+0][tj-2][ti-1] - shm[1][tk+0][tj+2][ti-1] + 8 *
+		   (-shm[1][tk+0][tj-1][ti-1] + shm[1][tk+0][tj+1][ti-1]))) + 8 *
+	 (la_ip1 * (shm[1][tk+0][tj-2][ti+1] - shm[1][tk+0][tj+2][ti+1] + 8 *
+		   (-shm[1][tk+0][tj-1][ti+1] + shm[1][tk+0][tj+1][ti+1]))) - 
+	 (la_ip2 * (shm[1][tk+0][tj-2][ti+2] - shm[1][tk+0][tj+2][ti+2] + 8 *
+		   (-shm[1][tk+0][tj-1][ti+2] + shm[1][tk+0][tj+1][ti+2]))))
+	/*   (la*w_z)_x */
+	+ strx_i * strz_k * i144 *
+	(la_im2 * (shm[2][tk-2][tj+0][ti-2] - shm[2][tk+2][tj+0][ti-2] + 8 *
+		   (-shm[2][tk-1][tj+0][ti-2] + shm[2][tk+1][tj+0][ti-2])) - 8 *
+	 (la_im1 * (shm[2][tk-2][tj+0][ti-1] - shm[2][tk+2][tj+0][ti-1] + 8 *
+		   (-shm[2][tk-1][tj+0][ti-1] + shm[2][tk+1][tj+0][ti-1]))) + 8 *
+	 (la_ip1 * (shm[2][tk-2][tj+0][ti+1] - shm[2][tk+2][tj+0][ti+1] + 8 *
+		   (-shm[2][tk-1][tj+0][ti+1] + shm[2][tk+1][tj+0][ti+1]))) - 
+	 (la_ip2 * (shm[2][tk-2][tj+0][ti+2] - shm[2][tk+2][tj+0][ti+2] + 8 *
+		   (-shm[2][tk-1][tj+0][ti+2] + shm[2][tk+1][tj+0][ti+2]))))
+	/*   (mu*v_x)_y */
+	+ strx_i * stry_j * i144 *
+	(mu_jm2 * (shm[1][tk+0][tj-2][ti-2] - shm[1][tk+0][tj-2][ti+2] + 8 *
+		   (-shm[1][tk+0][tj-2][ti-1] + shm[1][tk+0][tj-2][ti+1])) - 8 *
+	 (mu_jm1 * (shm[1][tk+0][tj-1][ti-2] - shm[1][tk+0][tj-1][ti+2] + 8 *
+		   (-shm[1][tk+0][tj-1][ti-1] + shm[1][tk+0][tj-1][ti+1]))) + 8 *
+	 (mu_jp1 * (shm[1][tk+0][tj+1][ti-2] - shm[1][tk+0][tj+1][ti+2] + 8 *
+		   (-shm[1][tk+0][tj+1][ti-1] + shm[1][tk+0][tj+1][ti+1]))) - 
+	 (mu_jp2 * (shm[1][tk+0][tj+2][ti-2] - shm[1][tk+0][tj+2][ti+2] + 8 *
+		   (-shm[1][tk+0][tj+2][ti-1] + shm[1][tk+0][tj+2][ti+1]))))
+	/*   (mu*w_x)_z */
+	+ strx_i * strz_k * i144 *
+	(mu_km2 * (shm[2][tk-2][tj+0][ti-2] - shm[2][tk-2][tj+0][ti+2] + 8 *
+		   (-shm[2][tk-2][tj+0][ti-1] + shm[2][tk-2][tj+0][ti+1])) - 8 *
+	 (mu_km1 * (shm[2][tk-1][tj+0][ti-2] - shm[2][tk-1][tj+0][ti+2] + 8 *
+		   (-shm[2][tk-1][tj+0][ti-1] + shm[2][tk-1][tj+0][ti+1]))) + 8 *
+	 (mu_kp1 * (shm[2][tk+1][tj+0][ti-2] - shm[2][tk+1][tj+0][ti+2] + 8 *
+		   (-shm[2][tk+1][tj+0][ti-1] + shm[2][tk+1][tj+0][ti+1]))) -
+	 (mu_kp2 * (shm[2][tk+2][tj+0][ti-2] - shm[2][tk+2][tj+0][ti+2] + 8 *
+		   (-shm[2][tk+2][tj+0][ti-1] + shm[2][tk+2][tj+0][ti+1]))));
+
+      /*   (mu*u_y)_x */
+      r2 += strx_i  *stry_j  *i144*
+	(mu_im2 * (shm[0][tk+0][tj-2][ti-2] - shm[0][tk+0][tj+2][ti-2] + 8 *
+		   (-shm[0][tk+0][tj-1][ti-2] + shm[0][tk+0][tj+1][ti-2])) - 8 *
+	 (mu_im1 * (shm[0][tk+0][tj-2][ti-1] - shm[0][tk+0][tj+2][ti-1] + 8 *
+		   (-shm[0][tk+0][tj-1][ti-1] + shm[0][tk+0][tj+1][ti-1]))) + 8 *
+	 (mu_ip1 * (shm[0][tk+0][tj-2][ti+1] - shm[0][tk+0][tj+2][ti+1] + 8 *
+		   (-shm[0][tk+0][tj-1][ti+1] + shm[0][tk+0][tj+1][ti+1]))) -
+	 (mu_ip2 * (shm[0][tk+0][tj-2][ti+2] - shm[0][tk+0][tj+2][ti+2] + 8 *
+		   (-shm[0][tk+0][tj-1][ti+2] + shm[0][tk+0][tj+1][ti+2]))))
+	/* (la*u_x)_y */
+	+ strx_i * stry_j * i144 *
+	(la_jm2 * (shm[0][tk+0][tj-2][ti-2] - shm[0][tk+0][tj-2][ti+2] + 8 *
+		   (-shm[0][tk+0][tj-2][ti-1] + shm[0][tk+0][tj-2][ti+1])) - 8 *
+	 (la_jm1 * (shm[0][tk+0][tj-1][ti-2] - shm[0][tk+0][tj-1][ti+2] + 8 *
+		   (-shm[0][tk+0][tj-1][ti-1] + shm[0][tk+0][tj-1][ti+1]))) + 8 *
+	 (la_jp1 * (shm[0][tk+0][tj+1][ti-2] - shm[0][tk+0][tj+1][ti+2] + 8 *
+		   (-shm[0][tk+0][tj+1][ti-1] + shm[0][tk+0][tj+1][ti+1]))) -
+	 (la_jp2 * (shm[0][tk+0][tj+2][ti-2] - shm[0][tk+0][tj+2][ti+2] + 8 *
+		   (-shm[0][tk+0][tj+2][ti-1] + shm[0][tk+0][tj+2][ti+1]))))
+	/* (la*w_z)_y */
+	+ stry_j * strz_k * i144 *
+	(la_jm2 * (shm[2][tk-2][tj-2][ti+0] - shm[2][tk+2][tj-2][ti+0] + 8 *
+		   (-shm[2][tk-1][tj-2][ti+0] + shm[2][tk+1][tj-2][ti+0])) - 8 *
+	 (la_jm1 * (shm[2][tk-2][tj-1][ti+0] - shm[2][tk+2][tj-1][ti+0] + 8 *
+		   (-shm[2][tk-1][tj-1][ti+0] + shm[2][tk+1][tj-1][ti+0]))) + 8 *
+	 (la_jp1 * (shm[2][tk-2][tj+1][ti+0] - shm[2][tk+2][tj+1][ti+0] + 8 *
+		   (-shm[2][tk-1][tj+1][ti+0] + shm[2][tk+1][tj+1][ti+0]))) -
+	 (la_jp2 * (shm[2][tk-2][tj+2][ti+0] - shm[2][tk+2][tj+2][ti+0] + 8 *
+		   (-shm[2][tk-1][tj+2][ti+0] + shm[2][tk+1][tj+2][ti+0]))))
+	/* (mu*w_y)_z */
+	+ stry_j * strz_k * i144 *
+	(mu_km2 * (shm[2][tk-2][tj-2][ti+0] - shm[2][tk-2][tj+2][ti+0] + 8 *
+		   (-shm[2][tk-2][tj-1][ti+0] + shm[2][tk-2][tj+1][ti+0])) - 8 *
+	 (mu_km1 * (shm[2][tk-1][tj-2][ti+0] - shm[2][tk-1][tj+2][ti+0] + 8 *
+		   (-shm[2][tk-1][tj-1][ti+0] + shm[2][tk-1][tj+1][ti+0]))) + 8 *
+	 (mu_kp1 * (shm[2][tk+1][tj-2][ti+0] - shm[2][tk+1][tj+2][ti+0] + 8 *
+		   (-shm[2][tk+1][tj-1][ti+0] + shm[2][tk+1][tj+1][ti+0]))) -
+	 (mu_kp2 * (shm[2][tk+2][tj-2][ti+0] - shm[2][tk+2][tj+2][ti+0] + 8 *
+		   (-shm[2][tk+2][tj-1][ti+0] + shm[2][tk+2][tj+1][ti+0]))));
+
+      /*  (mu*u_z)_x */
+      r3 += strx_i * strz_k * i144 *
+	(mu_im2 * (shm[0][tk-2][tj+0][ti-2] - shm[0][tk+2][tj+0][ti-2] + 8 *
+		   (-shm[0][tk-1][tj+0][ti-2] + shm[0][tk+1][tj+0][ti-2])) - 8 *
+	 (mu_im1 * (shm[0][tk-2][tj+0][ti-1] - shm[0][tk+2][tj+0][ti-1] + 8 *
+		   (-shm[0][tk-1][tj+0][ti-1] + shm[0][tk+1][tj+0][ti-1]))) + 8 *
+	 (mu_ip1 * (shm[0][tk-2][tj+0][ti+1] - shm[0][tk+2][tj+0][ti+1] + 8 *
+		   (-shm[0][tk-1][tj+0][ti+1] + shm[0][tk+1][tj+0][ti+1]))) -
+	 (mu_ip2 * (shm[0][tk-2][tj+0][ti+2] - shm[0][tk+2][tj+0][ti+2] + 8 *
+		   (-shm[0][tk-1][tj+0][ti+2] + shm[0][tk+1][tj+0][ti+2]))))
+	/* (mu*v_z)_y */
+	+ stry_j  *strz_k*i144*
+	(mu_jm2 * (shm[1][tk-2][tj-2][ti+0] - shm[1][tk+2][tj-2][ti+0] + 8 *
+		   (- shm[1][tk-1][tj-2][ti+0]+shm[1][tk+1][tj-2][ti+0])) - 8 * 
+	 (mu_jm1 * (shm[1][tk-2][tj-1][ti+0] - shm[1][tk+2][tj-1][ti+0] + 8 *
+		   (- shm[1][tk-1][tj-1][ti+0]+shm[1][tk+1][tj-1][ti+0]))) + 8 * 
+	 (mu_jp1 * (shm[1][tk-2][tj+1][ti+0] - shm[1][tk+2][tj+1][ti+0] + 8 *
+		   (- shm[1][tk-1][tj+1][ti+0]+shm[1][tk+1][tj+1][ti+0]))) -
+	 (mu_jp2 * (shm[1][tk-2][tj+2][ti+0] - shm[1][tk+2][tj+2][ti+0] + 8 *
+		   (- shm[1][tk-1][tj+2][ti+0]+shm[1][tk+1][tj+2][ti+0]))))
+	/*   (la*u_x)_z */
+	+ strx_i  *strz_k*i144*
+	(la_km2 * (shm[0][tk-2][tj+0][ti-2] - shm[0][tk-2][tj+0][ti+2] + 8 *
+		   (- shm[0][tk-2][tj+0][ti-1]+shm[0][tk-2][tj+0][ti+1])) - 8*
+	 (la_km1 * (shm[0][tk-1][tj+0][ti-2] - shm[0][tk-1][tj+0][ti+2] + 8 *
+		   (- shm[0][tk-1][tj+0][ti-1]+shm[0][tk-1][tj+0][ti+1]))) + 8*
+	 (la_kp1 * (shm[0][tk+1][tj+0][ti-2] - shm[0][tk+1][tj+0][ti+2] + 8 *
+		   (- shm[0][tk+1][tj+0][ti-1]+shm[0][tk+1][tj+0][ti+1]))) -
+	 (la_kp2 * (shm[0][tk+2][tj+0][ti-2] - shm[0][tk+2][tj+0][ti+2] + 8 *
+		   (- shm[0][tk+2][tj+0][ti-1]+shm[0][tk+2][tj+0][ti+1]))))
+	/* (la*v_y)_z */
+	+ stry_j  *strz_k*i144*
+	(la_km2 * (shm[1][tk-2][tj-2][ti+0] - shm[1][tk-2][tj+2][ti+0] + 8 *
+		   (- shm[1][tk-2][tj-1][ti+0]+shm[1][tk-2][tj+1][ti+0])) - 8*
+	 (la_km1 * (shm[1][tk-1][tj-2][ti+0] - shm[1][tk-1][tj+2][ti+0] + 8 *
+		   (- shm[1][tk-1][tj-1][ti+0]+shm[1][tk-1][tj+1][ti+0]))) + 8*
+	 (la_kp1 * (shm[1][tk+1][tj-2][ti+0] - shm[1][tk+1][tj+2][ti+0] + 8 *
+		   (- shm[1][tk+1][tj-1][ti+0]+shm[1][tk+1][tj+1][ti+0]))) -
+	 (la_kp2 * (shm[1][tk+2][tj-2][ti+0] - shm[1][tk+2][tj+2][ti+0] + 8 *
+		   (- shm[1][tk+2][tj-1][ti+0]+shm[1][tk+2][tj+1][ti+0]))));
+
+      // Use the result at point (i+2,j,k)
+      if (pred) {
+	// Apply predictor
+	int idx = k * nij + j * ni + i + 2;
+	float_sw4 fact = dt*dt / a_rho[idx];
+	up(0,idx) = 2 * shm[0][tk][tj][ti] - um(0,idx) + fact * (cof * r1 + fo(0,idx));
+	up(1,idx) = 2 * shm[1][tk][tj][ti] - um(1,idx) + fact * (cof * r2 + fo(1,idx));
+	up(2,idx) = 2 * shm[2][tk][tj][ti] - um(2,idx) + fact * (cof * r3 + fo(2,idx));
+      }
+      else {
+	// Apply 4th order correction
+	int idx = k * nij + j * ni + i + 2;
+	float_sw4 fact = dt*dt*dt*dt / (12 * a_rho[idx]);
+	up(0,idx) += fact * (cof * r1 + fo(0,idx));
+	up(1,idx) += fact * (cof * r2 + fo(1,idx));
+	up(2,idx) += fact * (cof * r3 + fo(2,idx));
+      }
+
+    }  // End active
+
+    if (iside == 0)
+      __syncthreads();
+
+  } // End side loop
+}
+
+// *************************************************************************************
+// Kernel launcher
+
+void rhs4_Y_pred_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      int ni, int nj, int nk,
+		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um,
+		      float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
+		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
+		      float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream) {
+
+  // Launch enough threads to cover [kfirst:klast]
+  int nkcomp = klast - kfirst + 1;
+  dim3 blocks = dim3((ni+BX-1)/BX, 1, (nkcomp+3)/4);
+  dim3 threads = dim3(BX, 2, 4);
+  if (c_order)
+    rhs4_Y<1,1><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast, kfirst, klast,
+       ni, nj, nk,
+       a_up, a_u, a_um,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, a_strz, h, dt);
+  else
+    rhs4_Y<0,1><<<blocks,threads,0,stream>>> 
+      (ifirst, ilast, jfirst, jlast, kfirst, klast,
+       ni, nj, nk,
+       a_up, a_u, a_um,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, a_strz, h, dt);
+}
+
+void rhs4_Y_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      int ni, int nj, int nk,
+		      float_sw4* a_up, float_sw4* a_u,
+		      float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
+		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
+		      float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream) {
+
+  // Launch enough threads to cover [kfirst:klast]
+  int nkcomp = klast - kfirst + 1;
+  dim3 blocks = dim3((ni+BX-1)/BX, 1, (nkcomp+3)/4);
+  dim3 threads = dim3(BX, 2, 4);
+  if (c_order)
+    rhs4_Y<1,0><<<blocks,threads,0,stream>>>
+      (ifirst, ilast, jfirst, jlast, kfirst, klast,
+       ni, nj, nk,
+       a_up, a_u, NULL,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, a_strz, h, dt);
+  else
+    rhs4_Y<0,0><<<blocks,threads,0,stream>>> 
+      (ifirst, ilast, jfirst, jlast, kfirst, klast,
+       ni, nj, nk,
+       a_up, a_u, NULL,
+       a_mu, a_lambda, a_rho, a_fo,
+       a_strx, a_stry, a_strz, h, dt);
+}
+
+// *************************************************************************************
+// *************************************************************************************
+// *************************************************************************************
 // RHS at the surface (free surface)
 // Launch UXx2x6 = 192 threads to compute the first 6 plans in the Z dimension.
 // Strategy : Load the first 10 depth plans of U, lambda, mu in shared memory,
@@ -11220,6 +12325,764 @@ void rhs4_highk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);
 }
+
+// *************************************************************************************
+// *************************************************************************************
+// *************************************************************************************
+// Super grid damping terms :
+// --------------------------
+// Launch enough threads to cover the full NI dimension, and [jfirst:jlast]
+// The kernel loops on all the elements in the K dimension, and uses register queues.
+// The "forward" half of the stencil for the wavefields U is kept in shared memory.
+// Rho is also in shared memory.
+
+template <bool c_order>
+// No launch_bounds here, it decreases performance.
+__launch_bounds__(BX*BY,1)
+__global__ void addsgd4 (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast, 
+			 int ni, int nj, int nk,
+			 float_sw4* __restrict__ a_up,
+			 const float_sw4* __restrict__ a_u,
+			 const float_sw4* __restrict__ a_um,
+			 const float_sw4* __restrict__ a_rho,
+			 const float_sw4* __restrict__ a_dcx,
+			 const float_sw4* __restrict__ a_dcy,
+			 const float_sw4* __restrict__ a_dcz,
+			 const float_sw4* __restrict__ a_strx,
+			 const float_sw4* __restrict__ a_stry,
+			 const float_sw4* __restrict__ a_strz,
+			 const float_sw4* __restrict__ a_cox,
+			 const float_sw4* __restrict__ a_coy,
+			 const float_sw4* __restrict__ a_coz,
+			 const float_sw4 beta) {
+  int index;
+  float_sw4 rho_km1, rho_k, rho_kp1;
+  float_sw4 rho_im1, rho_ip1;
+  float_sw4 rho_jm1, rho_jp1;
+
+  float_sw4 u_km2[3], u_km1[3], old_up[3];
+
+  float_sw4 strx_i, stry_j, strz_k;
+
+  float_sw4 dcx_im1, dcx_i, dcx_ip1;
+  float_sw4 dcy_jm1, dcy_j, dcy_jp1;
+  float_sw4 dcz_km1, dcz_k, dcz_kp1;
+  float_sw4 cox_i, coy_j, coz_k;
+
+  __shared__ float_sw4 shu[3][3][BY+4][BX+4];
+  __shared__ float_sw4 shr[BY+4][BX+4];
+
+  // I starts at 0 and covers the whole dimension
+  const int i = threadIdx.x + blockIdx.x * BX;
+  // J starts at jfirst
+  const int j = jfirst + threadIdx.y + blockIdx.y * BY;
+
+  const int ti = threadIdx.x + 2;
+  const int tj = threadIdx.y + 2;
+
+  const int nij = ni * nj;
+  const int nijk = nij * nk;
+
+  int active=0, loader=0, loady2=0, loaderx2=0;
+
+  // Active threads doing the computation at (i+2,j)
+  if (i+2 >= ifirst && i+2 <= ilast && j <= jlast)
+    active = 1;
+
+  if (i < ni && j-2 <= jlast+2) {
+    loader = 1;
+    if (threadIdx.x < 4 && i+BX < ni)
+      loaderx2 = 1;
+    if (threadIdx.y < 4 && j-2+BY <= jlast+2)
+      loady2 = 1;
+  }
+
+  if (active) {
+    // Load the first values of U-UM at (i+2, j, kfirst-2:kfirst-1)
+    int idx = (kfirst - 2) * nij + j * ni + i + 2;
+    for (int c=0; c<3; c++)
+      u_km2[c] = u(c,idx) - um(c,idx);
+    idx += nij;
+    for (int c=0; c<3; c++)
+      u_km1[c] = u(c,idx) - um(c,idx);
+    // Load the first values of rho at kfirst-1
+    rho_km1 = a_rho[idx];
+
+    // Load strx, stry, cox, coy, , dcx, dcy centered at (i+2, j)
+    strx_i   = a_strx[i+2];
+    stry_j   = a_stry[j];
+    cox_i   = a_cox[i+2];
+    coy_j   = a_coy[j];
+
+    dcx_im1 = a_dcx[i+1];
+    dcx_i   = a_dcx[i+2];
+    dcx_ip1 = a_dcx[i+3];
+
+    dcy_jm1 = a_dcy[j-1];
+    dcy_j   = a_dcy[j];
+    dcy_jp1 = a_dcy[j+1];
+
+    // Load the first values of dcz, strz
+    dcz_km1 = a_dcz[kfirst-1];
+    dcz_k   = a_dcz[kfirst];
+  }
+
+  // Loading index for data with halos at (i,j-2,kfirst)
+  index = kfirst * nij + (j - 2) * ni + i;
+
+  // Load the 2 plans of U-UM in the shared memory, at kfirst and kfirst+1
+  // Also load Rho at kfirst in shared memory
+  for (int c=0; c<3; c++) {
+    if (loader) {
+      int idx = index;
+      shu[c][1][threadIdx.y][threadIdx.x] = u(c,idx) - um(c,idx);
+      shu[c][2][threadIdx.y][threadIdx.x] = u(c,idx+nij) - um(c,idx+nij);
+    }
+    if (loaderx2) {
+      int idx = index + BX;
+      shu[c][1][threadIdx.y][threadIdx.x+BX] = u(c,idx) - um(c,idx);
+      shu[c][2][threadIdx.y][threadIdx.x+BX] = u(c,idx+nij) - um(c,idx+nij);
+    }
+    if (loady2) {
+      int idx = index + BY * ni;
+      shu[c][1][threadIdx.y+BY][threadIdx.x] = u(c,idx) - um(c,idx);
+      shu[c][2][threadIdx.y+BY][threadIdx.x] = u(c,idx+nij) - um(c,idx+nij);
+    }
+    if (loady2 && loaderx2) {
+      int idx = index + BY * ni + BX;
+      shu[c][1][threadIdx.y+BY][threadIdx.x+BX] = u(c,idx) - um(c,idx);
+      shu[c][2][threadIdx.y+BY][threadIdx.x+BX] = u(c,idx+nij) - um(c,idx+nij);
+    }
+  }
+  // Load rho
+  if (loader)
+    shr[threadIdx.y][threadIdx.x] = a_rho[index];
+  if (loaderx2)
+    shr[threadIdx.y][threadIdx.x+BX] = a_rho[index+BX];
+  if (loady2)
+    shr[threadIdx.y+BY][threadIdx.x] = a_rho[index+BY*ni];
+  if (loady2 && loaderx2)
+    shr[threadIdx.y+BY][threadIdx.x+BX] = a_rho[index+BY*ni+BX];
+
+  // Extract the Rho data from the SHR memory, to the register queue
+  __syncthreads();
+  rho_im1 = shr[tj][ti-1];
+  rho_k = shr[tj][ti];
+  rho_ip1 = shr[tj][ti+1];
+  rho_jm1 = shr[tj-1][ti];
+  rho_jp1 = shr[tj+1][ti];
+
+  // Move the index to kfirst+2
+  index += 2 * nij;
+
+  // Main loop on the K dimension
+  for (int k=kfirst; k <= klast; k++) {
+
+    __syncthreads();
+    // Rotate the shared memory and load (U-UM) at k+2
+    for (int c=0; c<3; c++) {
+      if (loader) { 
+        for (int s=0; s<2; s++)
+          shu[c][s][threadIdx.y][threadIdx.x] = shu[c][s+1][threadIdx.y][threadIdx.x];
+        int idx = index;
+        shu[c][2][threadIdx.y][threadIdx.x] = u(c,idx) - um(c,idx);
+      }
+      if (loaderx2) {
+        for (int s=0; s<2; s++)
+          shu[c][s][threadIdx.y][threadIdx.x+BX] = shu[c][s+1][threadIdx.y][threadIdx.x+BX];
+        int idx = index + BX;
+        shu[c][2][threadIdx.y][threadIdx.x+BX] = u(c,idx) - um(c,idx);
+      }
+      if (loady2) {
+        for (int s=0; s<2; s++)
+          shu[c][s][threadIdx.y+BY][threadIdx.x] = shu[c][s+1][threadIdx.y+BY][threadIdx.x];
+        int idx = index + BY * ni;
+        shu[c][2][threadIdx.y+BY][threadIdx.x] = u(c,idx) - um(c,idx);
+      }
+      if (loady2 && loaderx2) {
+        for (int s=0; s<2; s++)
+          shu[c][s][threadIdx.y+BY][threadIdx.x+BX] = shu[c][s+1][threadIdx.y+BY][threadIdx.x+BX];
+        int idx = index + BY * ni + BX;
+        shu[c][2][threadIdx.y+BY][threadIdx.x+BX] = u(c,idx) - um(c,idx);
+      }
+    }
+    // Load Rho at k+1
+    if (loader)
+      shr[threadIdx.y][threadIdx.x] = a_rho[index-nij];
+    if (loaderx2)
+      shr[threadIdx.y][threadIdx.x+BX] = a_rho[index+BX-nij];
+    if (loady2)
+      shr[threadIdx.y+BY][threadIdx.x] = a_rho[index+BY*ni-nij];
+    if (loady2 && loaderx2)
+      shr[threadIdx.y+BY][threadIdx.x+BX] = a_rho[index+BY*ni+BX-nij];
+
+    // Move the loading index to the next K
+    index += nij;
+    __syncthreads();
+
+    if (active) {
+
+      // Load the new values for strz, coz, dcz
+      strz_k = a_strz[k];
+      dcz_kp1 = a_dcz[k+1];
+      coz_k = a_coz[k];
+
+      float_sw4 birho = beta / rho_k;
+      
+      // Extract the values from shared memory into registers
+      rho_kp1 = shr[tj][ti];
+
+      // Update up(i+2,j,k)
+      int idx = k * nij + j * ni + i + 2;
+      old_up[0] = up(0,idx);
+      old_up[1] = up(1,idx);
+      old_up[2] = up(2,idx);
+      
+      for (int c=0; c<3; c++) {
+        up(c,idx) = old_up[c] - birho * 
+          (// x-differences
+           strx_i * coy_j * coz_k * (rho_ip1 * dcx_ip1 * (shu[c][0][tj][ti+2] - 2 * shu[c][0][tj][ti+1] + shu[c][0][tj][ti  ]) -
+                                     2 * rho_k * dcx_i * (shu[c][0][tj][ti+1] - 2 * shu[c][0][tj][ti  ] + shu[c][0][tj][ti-1]) +
+                                     rho_im1 * dcx_im1 * (shu[c][0][tj][ti  ] - 2 * shu[c][0][tj][ti-1] + shu[c][0][tj][ti-2])) +
+           // y-differences
+           stry_j * cox_i * coz_k * (rho_jp1 * dcy_jp1 * (shu[c][0][tj+2][ti] - 2 * shu[c][0][tj+1][ti] + shu[c][0][tj  ][ti]) -
+                                     2 * rho_k * dcy_j * (shu[c][0][tj+1][ti] - 2 * shu[c][0][tj  ][ti] + shu[c][0][tj-1][ti]) +
+                                     rho_jm1 * dcy_jm1 * (shu[c][0][tj  ][ti] - 2 * shu[c][0][tj-1][ti] + shu[c][0][tj-2][ti])) +
+           // z-differences
+           strz_k * cox_i * coy_j * (rho_kp1 * dcz_kp1 * (shu[c][2][tj][ti] - 2 * shu[c][1][tj][ti] + shu[c][0][tj][ti]) -
+                                     2 * rho_k * dcz_k * (shu[c][1][tj][ti] - 2 * shu[c][0][tj][ti] + u_km1[c]         ) +
+                                     rho_km1 * dcz_km1 * (shu[c][0][tj][ti] - 2 * u_km1[c]          + u_km2[c])));
+        // Rotate the registers
+        u_km2[c] = u_km1[c];
+        u_km1[c] = shu[c][0][tj][ti];
+      }
+
+      dcz_km1 = dcz_k;
+      dcz_k = dcz_kp1;
+
+      rho_km1 = rho_k;
+      rho_k = rho_kp1;
+      rho_im1 = shr[tj][ti-1];
+      rho_ip1 = shr[tj][ti+1];
+      rho_jm1 = shr[tj-1][ti];
+      rho_jp1 = shr[tj+1][ti];
+
+    } // End active
+
+  } // End K loop
+}
+
+
+// *************************************************************************************
+// Kernel launcher
+
+void addsgd4_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		  int ni, int nj, int nk,
+		  float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
+		  float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
+		  float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
+		  float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
+		  float_sw4 beta, int c_order, cudaStream_t stream) {
+
+  if (beta == 0.0)
+    return;
+  // Cover [0:ni-1][jfirst:jlast]
+  int njcomp = jlast - jfirst + 1;
+  dim3 blocks = dim3((ni+BX-1)/BX, (njcomp+BY-1)/BY, 1);
+  dim3 threads = dim3(BX, BY, 1);
+  if (c_order)
+    addsgd4<true><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
+						ni, nj, nk,
+						a_up, a_u, a_um, a_rho,
+						a_dcx,  a_dcy,  a_dcz,
+						a_strx, a_stry, a_strz,
+						a_cox,  a_coy,  a_coz, beta);
+  else
+    addsgd4<false><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
+						 ni, nj, nk,
+						 a_up, a_u, a_um, a_rho,
+						 a_dcx,  a_dcy,  a_dcz,
+						 a_strx, a_stry, a_strz,
+						 a_cox,  a_coy,  a_coz, beta);
+}
+
+
+// *************************************************************************************
+// *************************************************************************************
+// *************************************************************************************
+// SuperGrid X halos.
+// ------------------
+// This kernel computes the volumes :
+//   [ifirst:ifirst+1, jfirst:jlast, kfirst:klast]
+//   [ilast-1:ilast  , jfirst:jlast, kfirst:klast]
+// We're using 384 threads : 2x16x12 to compute the 2 elements for a (16x12) area.
+// The 384 threads are re-mapped as 6x16x4 threads to load the input data with halos,
+// so that the 6 coalesced elements that we need can be loaded efficiently in one operation.
+
+template <bool c_order>
+__launch_bounds__(384)
+__global__ void addsgd4_X (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast, 
+                           int ni, int nj, int nk,
+                           float_sw4* __restrict__ a_up,
+                           const float_sw4* __restrict__ a_u,
+                           const float_sw4* __restrict__ a_um,
+                           const float_sw4* __restrict__ a_rho,
+                           const float_sw4* __restrict__ a_dcx,
+                           const float_sw4* __restrict__ a_dcy,
+                           const float_sw4* __restrict__ a_dcz,
+                           const float_sw4* __restrict__ a_strx,
+                           const float_sw4* __restrict__ a_stry,
+                           const float_sw4* __restrict__ a_strz,
+                           const float_sw4* __restrict__ a_cox,
+                           const float_sw4* __restrict__ a_coy,
+                           const float_sw4* __restrict__ a_coz,
+                           const float_sw4 beta) {
+  int index, i;
+
+  float_sw4 rho_km1, rho_k, rho_kp1;
+  float_sw4 rho_im1, rho_ip1;
+  float_sw4 rho_jm1, rho_jp1;
+
+  float_sw4 strx_i, stry_j, strz_k;
+
+  float_sw4 dcx_im1, dcx_i, dcx_ip1;
+  float_sw4 dcy_jm1, dcy_j, dcy_jp1;
+  float_sw4 dcz_km1, dcz_k, dcz_kp1;
+  float_sw4 cox_i, coy_j, coz_k;
+
+  int active=0, loadj1=0, loadj2=0, loadk1=0, loadk2=0, loadk3=0, loadk4=0;
+
+  // Shared memory for 3 wavefields
+  __shared__ float_sw4 shu[3][12+4][16+4][2+4];
+
+  // J and K start at (jfirst, kfirst)
+  const int j = jfirst + threadIdx.y + blockIdx.y * 16;
+  const int k = kfirst + threadIdx.z + blockIdx.z * 12;
+
+  // Natural thread mapping for the computation
+  const int ti = threadIdx.x + 2;
+  const int tj = threadIdx.y + 2;
+  const int tk = threadIdx.z + 2;
+
+  // Use the (6,16,4) mapping to load the data into shared memory
+  int tid = (threadIdx.z * 16 + threadIdx.y) * 2 + threadIdx.x;
+  int txload = (tid % 6);
+  int tyload = (tid / 6);
+  int tzload = tyload / 16;
+  tyload = tyload % 16;
+  
+  const int nij = ni * nj;
+  const int nijk = nij * nk;
+
+  // Active threads doing the computation
+  if (j <= jlast && k <= klast)
+    active = 1;
+
+  if (active) {
+    // Load stry, stry, coy, coz, dcy, dcz centered at (j,k)
+    stry_j = a_stry[j];
+    strz_k = a_strz[k];
+    coy_j = a_coy[j];
+    coz_k = a_coz[k];
+    dcy_jm1 = a_dcy[j-1];
+    dcy_j = a_dcy[j];
+    dcy_jp1 = a_dcy[j+1];
+    dcz_km1 = a_dcz[k-1];
+    dcz_k = a_dcz[k];
+    dcz_kp1 = a_dcz[k+1];
+  }
+
+  // Loading index, computed with the alternate thread mapping, starting at (jfirst-2, kfirst-2)
+  int jload, kload;
+  jload = blockIdx.y * 16 + tyload + jfirst - 2;
+  kload = blockIdx.z * 12 + tzload + kfirst - 2;
+
+  // We're loading 6x20x16 elements with 6x16x4 threads => 2 x 4 = 8 sections.
+  // Find out Which threads can load the data for the different sections
+  if (jload <= jlast+2) loadj1 = 1;
+  if (tyload < 4 && jload+16 <= jlast+2) loadj2 = 1;
+  if (kload <= klast+2) loadk1 = 1;
+  if (kload+4 <= klast+2) loadk2 = 1;
+  if (kload+8 <= klast+2) loadk3 = 1;
+  if (kload+12 <= klast+2) loadk4 = 1;
+
+  // Loop on the 2 sides
+#pragma unroll
+  for (int iside=0; iside < 2; iside++) {
+    
+    if (iside == 0) {
+      index = (kload * nj + jload) * ni + ifirst - 2 + txload;
+      i = ifirst + threadIdx.x;
+    }
+    else {
+      index = (kload * nj + jload) * ni + ilast - 3 + txload;
+      i = ilast - 1 + threadIdx.x;
+    }
+    
+    // Load the 3 (U-UM) wavefields in shared memory
+    for (int c=0; c<3; c++) {
+      int idx = index;
+      if (loadk1) {
+        if (loadj1)
+          shu[c][tzload][tyload][txload] = u(c,idx) - um(c,idx);
+        if (loadj2)
+          shu[c][tzload][tyload+16][txload] = u(c,idx+16*ni) - um(c,idx+16*ni);
+      }
+      idx += 4 * nij;
+      if (loadk2) {
+        if (loadj1)
+          shu[c][tzload+4][tyload][txload] = u(c,idx) - um(c,idx);
+        if (loadj2)
+          shu[c][tzload+4][tyload+16][txload] = u(c,idx+16*ni) - um(c,idx+16*ni);
+      }
+      idx += 4 * nij;
+      if (loadk3) {
+        if (loadj1)
+          shu[c][tzload+8][tyload][txload] = u(c,idx) - um(c,idx);
+        if (loadj2)
+          shu[c][tzload+8][tyload+16][txload] = u(c,idx+16*ni) - um(c,idx+16*ni);
+      }
+      idx += 4 * nij;
+      if (loadk4) {
+        if (loadj1)
+          shu[c][tzload+12][tyload][txload] = u(c,idx) - um(c,idx);
+        if (loadj2)
+          shu[c][tzload+12][tyload+16][txload] = u(c,idx+16*ni) - um(c,idx+16*ni);
+      }
+    }
+    __syncthreads();
+
+    if (active) {
+
+      // Load strx, cox, dcx centered at i
+      strx_i   = a_strx[i];
+      cox_i = a_cox[i];
+      dcx_im1 = a_dcx[i-1];
+      dcx_i = a_dcx[i];
+      dcx_ip1 = a_dcx[i+1];
+
+      // Natural thread index at (i,j,k)
+      int idx = k * nij + j * ni + i;
+      
+      // Load rho directly 
+      rho_k   = a_rho[idx];
+      rho_im1 = a_rho[idx-1];
+      rho_ip1 = a_rho[idx+1];
+      rho_jm1 = a_rho[idx-ni];
+      rho_jp1 = a_rho[idx+ni];      
+      rho_km1 = a_rho[idx-nij];
+      rho_kp1 = a_rho[idx+nij];
+
+      float_sw4 birho = beta / rho_k;
+
+      for (int c=0; c<3; c++) 
+        up(c, idx) -= birho * 
+          (// x-differences
+           strx_i * coy_j * coz_k *
+           (rho_ip1 * dcx_ip1 * (shu[c][tk][tj][ti+2] - 2 * shu[c][tk][tj][ti+1] + shu[c][tk][tj][ti  ]) -
+            2 * rho_k * dcx_i * (shu[c][tk][tj][ti+1] - 2 * shu[c][tk][tj][ti  ] + shu[c][tk][tj][ti-1]) +
+            rho_im1 * dcx_im1 * (shu[c][tk][tj][ti  ] - 2 * shu[c][tk][tj][ti-1] + shu[c][tk][tj][ti-2])) +
+           // y-differences
+           stry_j * cox_i * coz_k *
+           (rho_jp1 * dcy_jp1 * (shu[c][tk][tj+2][ti] - 2 * shu[c][tk][tj+1][ti] + shu[c][tk][tj  ][ti]) -
+            2 * rho_k * dcy_j * (shu[c][tk][tj+1][ti] - 2 * shu[c][tk][tj  ][ti] + shu[c][tk][tj-1][ti]) +
+            rho_jm1 * dcy_jm1 * (shu[c][tk][tj  ][ti] - 2 * shu[c][tk][tj-1][ti] + shu[c][tk][tj-2][ti])) +
+           // z-differences
+           strz_k * cox_i * coy_j *
+           (rho_kp1 * dcz_kp1 * (shu[c][tk+2][tj][ti] - 2 * shu[c][tk+1][tj][ti] + shu[c][tk  ][tj][ti]) -
+            2 * rho_k * dcz_k * (shu[c][tk+1][tj][ti] - 2 * shu[c][tk  ][tj][ti] + shu[c][tk-1][tj][ti]) +
+            rho_km1 * dcz_km1 * (shu[c][tk  ][tj][ti] - 2 * shu[c][tk-1][tj][ti] + shu[c][tk-2][tj][ti])));
+
+
+    }  // End active
+    
+    if (iside == 0)
+      __syncthreads();
+    
+  } // End side loop
+}
+
+
+// *************************************************************************************
+// Kernel launcher
+
+void addsgd4_X_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		    int ni, int nj, int nk,
+		    float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
+		    float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
+		    float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
+		    float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
+		    float_sw4 beta, int c_order, cudaStream_t stream) {
+
+  if (beta == 0.0)
+    return;
+
+  // Launch enough threads to cover [jfirst:jlast][kfirst:klast]
+  int njcomp = jlast - jfirst + 1;
+  int nkcomp = klast - kfirst + 1;
+
+  // 384 threads as 2x16x12, they will also be used as 6x16x4 inside the kernel
+  dim3 blocks = dim3(1, (njcomp+15)/16, (nkcomp+11)/12);
+  dim3 threads = dim3(2, 16, 12);
+  if (c_order)
+    addsgd4_X<1><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
+					       ni, nj, nk,
+					       a_up, a_u, a_um, a_rho,
+					       a_dcx,  a_dcy,  a_dcz,
+					       a_strx, a_stry, a_strz,
+					       a_cox,  a_coy,  a_coz, beta);
+  else
+    addsgd4_X<0><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
+					       ni, nj, nk,
+					       a_up, a_u, a_um, a_rho,
+					       a_dcx,  a_dcy,  a_dcz,
+					       a_strx, a_stry, a_strz,
+					       a_cox,  a_coy,  a_coz, beta);
+}
+
+// *************************************************************************************
+// *************************************************************************************
+// *************************************************************************************
+// RHS4 Y halos :
+// --------------
+// Compute RHS4 in the halos, for each side in the Y dimension.
+// Use blocks of (BX,2,4) threads, and launch enough threads to cover the whole
+// volume (0:ni-1, jfirst:jlast, kfirst:klast).
+// The block of (BX,2,4) threads allows to load (BX+4,6,8) elements in shared memory
+// relatively easily, while keeping enough blocks to load the GPU.
+
+
+
+template <bool c_order>
+__launch_bounds__(BX*8)
+__global__ void addsgd4_Y (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast, 
+                           int ni, int nj, int nk,
+                           float_sw4* __restrict__ a_up,
+                           const float_sw4* __restrict__ a_u,
+                           const float_sw4* __restrict__ a_um,
+                           const float_sw4* __restrict__ a_rho,
+                           const float_sw4* __restrict__ a_dcx,
+                           const float_sw4* __restrict__ a_dcy,
+                           const float_sw4* __restrict__ a_dcz,
+                           const float_sw4* __restrict__ a_strx,
+                           const float_sw4* __restrict__ a_stry,
+                           const float_sw4* __restrict__ a_strz,
+                           const float_sw4* __restrict__ a_cox,
+                           const float_sw4* __restrict__ a_coy,
+                           const float_sw4* __restrict__ a_coz,
+                           const float_sw4 beta) {
+  int index, j;
+
+  float_sw4 rho_km1, rho_k, rho_kp1;
+  float_sw4 rho_im1, rho_ip1;
+  float_sw4 rho_jm1, rho_jp1;
+
+  float_sw4 strx_i, stry_j, strz_k;
+
+  float_sw4 dcx_im1, dcx_i, dcx_ip1;
+  float_sw4 dcy_jm1, dcy_j, dcy_jp1;
+  float_sw4 dcz_km1, dcz_k, dcz_kp1;
+  float_sw4 cox_i, coy_j, coz_k;
+
+  int active=0, loader=0, loadx2=0, loadk2=0;
+
+  __shared__ float_sw4 shu[3][8][6][BX+4];
+
+  // I starts at 0 and covers the whole dimension
+  const int i = threadIdx.x + blockIdx.x * BX;
+  // K starts at kfirst
+  const int k = kfirst + threadIdx.z + blockIdx.z * 4;
+
+  const int ti = threadIdx.x + 2;
+  const int tj = threadIdx.y + 2;
+  const int tk = threadIdx.z + 2;
+  
+  const int nij = ni * nj;
+  const int nijk = nij * nk;
+
+  // Active threads doing the computation at (i,j,k)
+  if (i >= ifirst && i <= ilast && k <= klast)
+    active = 1;
+
+  if (k-2 <= klast+2) {
+    if (i-2 >= 0 && i-2 < ni)
+      loader = 1;
+    if (threadIdx.x < 4 && i+BX-2 < ni)
+      loadx2 = 1;
+    if (k <= klast) // (k+4-2 <= klast+2)
+      loadk2 = 1;
+  }
+
+  if (active) {
+    // Load strx, strz, cox, coz, dcx, dcz centered at i and k
+    strx_i = a_strx[i];
+    strz_k = a_strz[k];
+    cox_i = a_cox[i];
+    coz_k = a_coz[k];
+    dcx_im1 = a_dcx[i-1];
+    dcx_i   = a_dcx[i];
+    dcx_ip1 = a_dcx[i+1];
+    dcz_km1 = a_dcz[k-1];
+    dcz_k   = a_dcz[k];
+    dcz_kp1 = a_dcz[k+1];
+  }
+
+  // Loop on the 2 sides
+#pragma unroll
+  for (int iside=0; iside < 2; iside++) {
+
+    if (iside == 0)
+      j = jfirst + threadIdx.y;
+    else
+      j = jlast - 1 + threadIdx.y;
+
+    index = (k - 2) * nij + (j - 2) * ni + i - 2;
+    
+    // Load U-Um in the shared memory
+    if (loader) {
+      int idx = index;
+      shu[0][threadIdx.z][threadIdx.y][threadIdx.x] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z][threadIdx.y][threadIdx.x] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z][threadIdx.y][threadIdx.x] = u(2,idx) - um(2,idx);
+      idx += 2 * ni;
+      shu[0][threadIdx.z][threadIdx.y+2][threadIdx.x] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z][threadIdx.y+2][threadIdx.x] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z][threadIdx.y+2][threadIdx.x] = u(2,idx) - um(2,idx);
+      idx += 2 * ni;
+      shu[0][threadIdx.z][threadIdx.y+4][threadIdx.x] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z][threadIdx.y+4][threadIdx.x] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z][threadIdx.y+4][threadIdx.x] = u(2,idx) - um(2,idx);
+    }
+    if (loadx2) {
+      int idx = index + BX;
+      shu[0][threadIdx.z][threadIdx.y][threadIdx.x+BX] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z][threadIdx.y][threadIdx.x+BX] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z][threadIdx.y][threadIdx.x+BX] = u(2,idx) - um(2,idx);
+      idx += 2 * ni;
+      shu[0][threadIdx.z][threadIdx.y+2][threadIdx.x+BX] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z][threadIdx.y+2][threadIdx.x+BX] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z][threadIdx.y+2][threadIdx.x+BX] = u(2,idx) - um(2,idx);
+      idx += 2 * ni;
+      shu[0][threadIdx.z][threadIdx.y+4][threadIdx.x+BX] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z][threadIdx.y+4][threadIdx.x+BX] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z][threadIdx.y+4][threadIdx.x+BX] = u(2,idx) - um(2,idx);
+    }
+    if (loader && loadk2) {
+      int idx = index + 4 * nij;
+      shu[0][threadIdx.z+4][threadIdx.y][threadIdx.x] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z+4][threadIdx.y][threadIdx.x] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z+4][threadIdx.y][threadIdx.x] = u(2,idx) - um(2,idx);
+      idx += 2 * ni;
+      shu[0][threadIdx.z+4][threadIdx.y+2][threadIdx.x] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z+4][threadIdx.y+2][threadIdx.x] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z+4][threadIdx.y+2][threadIdx.x] = u(2,idx) - um(2,idx);
+      idx += 2 * ni;
+      shu[0][threadIdx.z+4][threadIdx.y+4][threadIdx.x] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z+4][threadIdx.y+4][threadIdx.x] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z+4][threadIdx.y+4][threadIdx.x] = u(2,idx) - um(2,idx);
+    }
+    if (loadk2 && loadx2) {
+      int idx = index + 4 * nij + BX;
+      shu[0][threadIdx.z+4][threadIdx.y][threadIdx.x+BX] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z+4][threadIdx.y][threadIdx.x+BX] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z+4][threadIdx.y][threadIdx.x+BX] = u(2,idx) - um(2,idx);
+      idx += 2 * ni;
+      shu[0][threadIdx.z+4][threadIdx.y+2][threadIdx.x+BX] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z+4][threadIdx.y+2][threadIdx.x+BX] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z+4][threadIdx.y+2][threadIdx.x+BX] = u(2,idx) - um(2,idx);
+      idx += 2 * ni;
+      shu[0][threadIdx.z+4][threadIdx.y+4][threadIdx.x+BX] = u(0,idx) - um(0,idx);
+      shu[1][threadIdx.z+4][threadIdx.y+4][threadIdx.x+BX] = u(1,idx) - um(1,idx);
+      shu[2][threadIdx.z+4][threadIdx.y+4][threadIdx.x+BX] = u(2,idx) - um(2,idx);
+    }
+    __syncthreads();
+
+    if (active) {
+
+      // Load stry, coy, dcy, centered at j
+      stry_j = a_stry[j];
+      coy_j = a_coy[j];
+      dcy_jm1 = a_dcy[j-1];
+      dcy_j   = a_dcy[j];
+      dcy_jp1 = a_dcy[j+1];
+
+      // Natural indexing for (i,j,k)
+      int idx = (k * nj + j) * ni + i;
+      
+      // Load rho directly
+      rho_k   = a_rho[idx];
+      rho_im1 = a_rho[idx-1];
+      rho_ip1 = a_rho[idx+1];
+      rho_jm1 = a_rho[idx-ni];
+      rho_jp1 = a_rho[idx+ni];      
+      rho_km1 = a_rho[idx-nij];
+      rho_kp1 = a_rho[idx+nij];
+
+      float_sw4 birho = beta / rho_k;
+      
+      // Update up(i,j,k)
+      for (int c=0; c<3; c++) {
+        up(c, idx) -= birho * 
+          (// x-differences
+           strx_i * coy_j * coz_k *
+           (rho_ip1 * dcx_ip1 * (shu[c][tk][tj][ti+2] - 2 * shu[c][tk][tj][ti+1] + shu[c][tk][tj][ti  ]) -
+            2 * rho_k * dcx_i * (shu[c][tk][tj][ti+1] - 2 * shu[c][tk][tj][ti  ] + shu[c][tk][tj][ti-1]) +
+            rho_im1 * dcx_im1 * (shu[c][tk][tj][ti  ] - 2 * shu[c][tk][tj][ti-1] + shu[c][tk][tj][ti-2])) +
+           // y-differences
+           stry_j * cox_i * coz_k *
+           (rho_jp1 * dcy_jp1 * (shu[c][tk][tj+2][ti] - 2 * shu[c][tk][tj+1][ti] + shu[c][tk][tj  ][ti]) -
+            2 * rho_k * dcy_j * (shu[c][tk][tj+1][ti] - 2 * shu[c][tk][tj  ][ti] + shu[c][tk][tj-1][ti]) +
+            rho_jm1 * dcy_jm1 * (shu[c][tk][tj  ][ti] - 2 * shu[c][tk][tj-1][ti] + shu[c][tk][tj-2][ti])) +
+           // z-differences
+           strz_k * cox_i * coy_j *
+           (rho_kp1 * dcz_kp1 * (shu[c][tk+2][tj][ti] - 2 * shu[c][tk+1][tj][ti] + shu[c][tk  ][tj][ti]) -
+            2 * rho_k * dcz_k * (shu[c][tk+1][tj][ti] - 2 * shu[c][tk  ][tj][ti] + shu[c][tk-1][tj][ti]) +
+            rho_km1 * dcz_km1 * (shu[c][tk  ][tj][ti] - 2 * shu[c][tk-1][tj][ti] + shu[c][tk-2][tj][ti])));
+      }
+    }  // End active
+
+    if (iside == 0)
+      __syncthreads();
+
+  } // End side loop
+}
+
+
+// *************************************************************************************
+// Kernel launcher
+
+void addsgd4_Y_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		    int ni, int nj, int nk,
+		    float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
+		    float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
+		    float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
+		    float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
+		    float_sw4 beta, int c_order, cudaStream_t stream) {
+
+  if (beta == 0.0)
+    return;
+
+  // Launch enough threads to cover [kfirst:klast]
+  int nkcomp = klast - kfirst + 1;
+  dim3 blocks = dim3((ni+BX-1)/BX, 1, (nkcomp+3)/4);
+  dim3 threads = dim3(BX, 2, 4);
+
+  if (c_order)
+    addsgd4_Y<1><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
+					       ni, nj, nk,
+					       a_up, a_u, a_um, a_rho,
+					       a_dcx,  a_dcy,  a_dcz,
+					       a_strx, a_stry, a_strz,
+					       a_cox,  a_coy,  a_coz, beta);
+  else
+    addsgd4_Y<0><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
+					       ni, nj, nk,
+					       a_up, a_u, a_um, a_rho,
+					       a_dcx,  a_dcy,  a_dcz,
+					       a_strx, a_stry, a_strz,
+					       a_cox,  a_coy,  a_coz, beta);
+}
+
 
 // *************************************************************************************
 // *************************************************************************************

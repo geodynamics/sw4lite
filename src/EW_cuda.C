@@ -1482,7 +1482,7 @@ void EW::RHSPredCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sa
         endk = nk - 3;
 
       // RHS and predictor in center
-      rhs4_pred_gpu (2, ni-3, 2, nj-3, startk, endk,
+      rhs4_pred_gpu (4, ni-5, 4, nj-5, startk, endk,
                      ni, nj, nk,
                      a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
                      a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
@@ -1511,26 +1511,26 @@ void EW::RHSPredCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<
       nz = m_global_nz[g];  
       // If we have a free surface, the other kernels start at k=8 instead of 2,
       // the free surface will compute k=[2:7]
-//      if( m_onesided[g][4] )
-//        startk = 8;
-//      else
-//        startk = 2;
-//
-//      // RHS and predictor in the X halos
-//      rhs4_X_pred_gpu (2, ni-3, 4, nj-5, startk, nk-3,
-//                       ni, nj, nk,
-//                       a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
-//                       a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
-//                       dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
-//                       mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
-//		   
-//      // RHS and predictor in the Y halos
-//      rhs4_Y_pred_gpu (2, ni-3, 2, nj-3, startk, nk-3,
-//                       ni, nj, nk,
-//                       a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
-//                       a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
-//                       dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
-//                       mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+      if( m_onesided[g][4] )
+        startk = 8;
+      else
+        startk = 2;
+
+      // RHS and predictor in the X halos
+      rhs4_X_pred_gpu (2, ni-3, 4, nj-5, startk, nk-3,
+                       ni, nj, nk,
+                       a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
+                       a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                       dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                       mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+		   
+      // RHS and predictor in the Y halos
+      rhs4_Y_pred_gpu (2, ni-3, 2, nj-3, startk, nk-3,
+                       ni, nj, nk,
+                       a_Up[g].dev_ptr(), a_U[g].dev_ptr(), a_Um[g].dev_ptr(),
+                       a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                       dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                       mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
   
       // Free surface and predictor
       if( m_onesided[g][4] )
@@ -1579,7 +1579,7 @@ void EW::RHSCorrCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
         endk = nk - 3;
   
       // RHS and corrector in the rest of the cube
-      rhs4_corr_gpu (2, ni-3, 2, nj-3, startk, endk,
+      rhs4_corr_gpu (4, ni-5, 4, nj-5, startk, endk,
                      ni, nj, nk,
                      a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
                      a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
@@ -1605,25 +1605,25 @@ void EW::RHSCorrCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
       nk = m_kEnd[g] - m_kStart[g] + 1;
       
       nz = m_global_nz[g];  
-//      // If we have a free surface, the other kernels start at k=8 instead of 2,
-//      // the free surface will compute k=[2:7]
-//      if( m_onesided[g][4] )
-//        startk = 8;
-//      else
-//        startk = 2;
-//  
-//      rhs4_X_corr_gpu (2, ni-3, 4, nj-5, startk, nk-3,
-//                     ni, nj, nk,
-//                     a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
-//                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
-//                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
-//                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
-//      rhs4_Y_corr_gpu (2, ni-3, 2, nj-3, startk, nk-3,
-//                     ni, nj, nk,
-//                     a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
-//                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
-//                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
-//                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+      // If we have a free surface, the other kernels start at k=8 instead of 2,
+      // the free surface will compute k=[2:7]
+      if( m_onesided[g][4] )
+        startk = 8;
+      else
+        startk = 2;
+  
+      rhs4_X_corr_gpu (2, ni-3, 4, nj-5, startk, nk-3,
+                     ni, nj, nk,
+                     a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
+                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
+      rhs4_Y_corr_gpu (2, ni-3, 2, nj-3, startk, nk-3,
+                     ni, nj, nk,
+                     a_Up[g].dev_ptr(), a_U[g].dev_ptr(),
+                     a_Mu[g].dev_ptr(), a_Lambda[g].dev_ptr(), a_Rho[g].dev_ptr(), a_F[g].dev_ptr(),
+                     dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                     mGridSize[g], mDt, m_corder, m_cuobj->m_stream[st]);
       // Free surface and corrector on low-k boundary
       if( m_onesided[g][4] )
         rhs4_lowk_corr_gpu (2, ni-3, 2, nj-3,
@@ -1645,6 +1645,102 @@ void EW::RHSCorrCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
     }  
 #endif
 }  
+
+//---------------------------------------------------------------------------
+void EW::addSuperGridDampingCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                                              vector<Sarray> & a_Um, vector<Sarray> & a_Rho, int st )
+{
+#ifdef SW4_CUDA
+  for(int g=0 ; g<mNumberOfGrids; g++ )
+   {
+     int ni = m_iEnd[g] - m_iStart[g] + 1;
+     int nj = m_jEnd[g] - m_jStart[g] + 1;
+     int nk = m_kEnd[g] - m_kStart[g] + 1;
+
+     // If we have a free surface, the other kernels start at k=8 instead of 2,
+     // the free surface will compute k=[2:7]
+     int startk;
+     if( m_onesided[g][4] )
+       startk = 8;
+     else
+       startk = 2;
+
+     if( m_sg_damping_order == 4 )
+       {
+         // X Halo (avoid the Y halos -> J=[4:NJ-5]
+         addsgd4_X_gpu  (2, ni-3, 4, nj-5, startk, nk-3,
+                         ni, nj, nk,
+                         a_Up[g].dev_ptr(),  a_U[g].dev_ptr(), a_Um[g].dev_ptr(), a_Rho[g].dev_ptr(),
+                         dev_sg_dc_x[g], dev_sg_dc_y[g], dev_sg_dc_z[g],
+                         dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                         dev_sg_corner_x[g], dev_sg_corner_y[g], dev_sg_corner_z[g],
+                         m_supergrid_damping_coefficient, m_corder, m_cuobj->m_stream[st]);
+         // Y halo
+         addsgd4_Y_gpu  (2, ni-3, 2, nj-3, startk, nk-3,
+                         ni, nj, nk,
+                         a_Up[g].dev_ptr(),  a_U[g].dev_ptr(), a_Um[g].dev_ptr(), a_Rho[g].dev_ptr(),
+                         dev_sg_dc_x[g], dev_sg_dc_y[g], dev_sg_dc_z[g],
+                         dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                         dev_sg_corner_x[g], dev_sg_corner_y[g], dev_sg_corner_z[g],
+                         m_supergrid_damping_coefficient, m_corder, m_cuobj->m_stream[st]);
+         
+         // Free surface k=[2:7]
+         if( m_onesided[g][4] )
+           addsgd4_gpu  (2, ni-3, 2, nj-3, 2, 7,
+                         ni, nj, nk,
+                         a_Up[g].dev_ptr(),  a_U[g].dev_ptr(), a_Um[g].dev_ptr(), a_Rho[g].dev_ptr(),
+                         dev_sg_dc_x[g], dev_sg_dc_y[g], dev_sg_dc_z[g],
+                         dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                         dev_sg_corner_x[g], dev_sg_corner_y[g], dev_sg_corner_z[g],
+                         m_supergrid_damping_coefficient, m_corder, m_cuobj->m_stream[st]);
+         CHECK_ERROR("addsgd4_gpu");
+       }
+//     else if(  m_sg_damping_order == 6 )
+//       {
+//         // TBD
+//         CHECK_ERROR("addsgd6_gpu");
+//       }
+   }
+#endif
+}
+
+//---------------------------------------------------------------------------
+void EW::addSuperGridDampingCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                                      vector<Sarray> & a_Um, vector<Sarray> & a_Rho, int st )
+{
+#ifdef SW4_CUDA
+  for(int g=0 ; g<mNumberOfGrids; g++ )
+   {
+     int ni = m_iEnd[g] - m_iStart[g] + 1;
+     int nj = m_jEnd[g] - m_jStart[g] + 1;
+     int nk = m_kEnd[g] - m_kStart[g] + 1;
+     // If we have a free surface, the other kernels start at k=8 instead of 2,
+     // the free surface will compute k=[2:7]
+     int startk;
+     if( m_onesided[g][4] )
+       startk = 8;
+     else
+       startk = 2;
+     if( m_sg_damping_order == 4 )
+       {
+         addsgd4_gpu( 4, ni-5, 4, nj-5, startk, nk-3,
+                      ni, nj, nk,
+                      a_Up[g].dev_ptr(),  a_U[g].dev_ptr(), a_Um[g].dev_ptr(), a_Rho[g].dev_ptr(),
+                      dev_sg_dc_x[g], dev_sg_dc_y[g], dev_sg_dc_z[g],
+                      dev_sg_str_x[g], dev_sg_str_y[g], dev_sg_str_z[g],
+                      dev_sg_corner_x[g], dev_sg_corner_y[g], dev_sg_corner_z[g],
+                      m_supergrid_damping_coefficient, m_corder, m_cuobj->m_stream[st]);
+         CHECK_ERROR("addsgd4_dev");
+      }
+//     else if(  m_sg_damping_order == 6 )
+//       {
+         // TBD
+//         CHECK_ERROR("addsgd6_gpu");
+//       }
+   }
+#endif
+}
+
 
 //-----------------------------------------------------------------------
 

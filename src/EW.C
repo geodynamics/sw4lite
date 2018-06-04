@@ -2537,7 +2537,11 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 //	 evalRHSCU( U, mMu, mLambda, Lu, 0 ); // save Lu in composite grid 'Lu'
         // RHS + predictor in the rest (stream 0)
         RHSPredCU_boundary (Up, U, Um, mMu, mLambda, mRho, F, 0);
-        RHSPredCU_center (Up, U, Um, mMu, mLambda, mRho, F, 0);
+
+        // Wait for stream 0 to complete
+        m_cuobj->sync_stream(0);
+
+        RHSPredCU_center (Up, U, Um, mMu, mLambda, mRho, F, 1);
       }
       else
 	 evalRHS( U, mMu, mLambda, Lu ); // save Lu in composite grid 'Lu'
@@ -2569,6 +2573,7 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
 // communicate across processor boundaries
       if( m_cuobj->has_gpu() )
+      {
          for(int g=0 ; g < mNumberOfGrids ; g++ )
          {
 	    //communicate_arrayCU( Up[g], g, 0);
@@ -2579,9 +2584,13 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
            communicate_arrayCU_Y( Up[g], g, 0);
            unpack_HaloArrayCU_Y (Up[g], g, 0);
 	 } 
+         cudaDeviceSynchronize();
+      }
       else
+      {
          for(int g=0 ; g < mNumberOfGrids ; g++ )
 	    communicate_array( Up[g], g );
+      }
 
       time_measure[3] = MPI_Wtime();
 
@@ -2609,7 +2618,10 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 
       // Corrector
       if( m_cuobj->has_gpu() )
-	 ForceCU( t, dev_F, true, 0 );
+      {
+	 ForceCU( t, dev_F, true, 1 );
+         cudaDeviceSynchronize();
+      }
       else
 	 Force( t, F, m_point_sources, true );
       //      for( int g=0; g < mNumberOfGrids ; g++ )
@@ -2632,8 +2644,16 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if( m_cuobj->has_gpu() )
       {
 //	 evalRHSCU( Uacc, mMu, mLambda, Lu, 0 );
+         // RHS + corrector in the free surface and halos (stream 0)
          RHSCorrCU_boundary (Up, Uacc, mMu, mLambda, mRho, F, 0);
-         RHSCorrCU_center (Up, Uacc, mMu, mLambda, mRho, F, 0);
+
+         // Add super grid damping terms in the free surface and halos (stream 0)
+         addSuperGridDampingCU_upper_boundary (Up, U, Um, mRho, 0);
+
+         // Wait for stream 0 to complete
+         m_cuobj->sync_stream(0);
+
+         RHSCorrCU_center (Up, Uacc, mMu, mLambda, mRho, F, 1);
       }
       else
        	 evalRHS( Uacc, mMu, mLambda, Lu );
@@ -2645,7 +2665,6 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
 	 check_for_nan( Lu, 1, "L(uacc) " );
 #endif
 
-      m_cuobj->sync_stream(0);
 //corrector is merged into RHSCorrCU_*
       if( !m_cuobj->has_gpu() )
 //	 evalCorrectorCU( Up, mRho, Lu, F, 1 );
@@ -2658,7 +2677,14 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if ( m_use_supergrid )
       {
 	 if( m_cuobj->has_gpu() )
-	    addSuperGridDampingCU( Up, U, Um, mRho, 0 );
+         {
+	    // addSuperGridDampingCU( Up, U, Um, mRho, 0 );
+            // Add super grid damping terms in the rest of the cube (stream 1)
+            addSuperGridDampingCU_center (Up, U, Um, mRho, 1);
+
+            // Add super grid damping terms in the rest of the cube (stream 1)
+            m_cuobj->sync_stream(1);
+         }
 	 else
 	    addSuperGridDamping( Up, U, Um, mRho );
 

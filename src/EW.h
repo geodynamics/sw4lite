@@ -313,6 +313,10 @@ class EW
    void RHSCorrCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
                          vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
                          vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+   void addSuperGridDampingCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                                             vector<Sarray> & a_Um, vector<Sarray> & a_Rho, int st);
+   void addSuperGridDampingCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                                     vector<Sarray> & a_Um, vector<Sarray> & a_Rho, int st);
  
    // DG stuff
    int m_qu;

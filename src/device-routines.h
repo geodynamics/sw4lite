@@ -301,6 +301,34 @@ void rhs4_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, in
                     float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
                     float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
 
+void rhs4_X_pred_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      int ni, int nj, int nk,
+		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um,
+		      float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo, 
+		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
+		      float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
+
+void rhs4_X_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      int ni, int nj, int nk,
+		      float_sw4* a_up, float_sw4* a_u,
+		      float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo, 
+		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
+		      float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
+
+void rhs4_Y_pred_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      int ni, int nj, int nk,
+		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um,
+		      float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
+		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
+		      float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
+
+void rhs4_Y_corr_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		      int ni, int nj, int nk,
+		      float_sw4* a_up, float_sw4* a_u,
+		      float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
+		      float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz, 
+		      float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
+
 void rhs4_lowk_pred_gpu (int ifirst, int ilast, int jfirst, int jlast,
 			 int ni, int nj, int nk, int nz,
 			 float_sw4* a_up, float_sw4* a_u, float_sw4* a_um,
@@ -328,6 +356,30 @@ void rhs4_highk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
 			 float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_rho, float_sw4* a_fo,
 			 float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
 			 float_sw4 h, float_sw4 dt, bool c_order, cudaStream_t stream);
+
+void addsgd4_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		  int ni, int nj, int nk,
+		  float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
+		  float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
+		  float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
+		  float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
+		  float_sw4 beta, int c_order, cudaStream_t stream);
+
+void addsgd4_X_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		    int ni, int nj, int nk,
+		    float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
+		    float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
+		    float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
+		    float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
+		    float_sw4 beta, int c_order, cudaStream_t stream);
+
+void addsgd4_Y_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
+		    int ni, int nj, int nk,
+		    float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
+		    float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
+		    float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
+		    float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
+		    float_sw4 beta, int c_order, cudaStream_t stream);
 
 void bcfortsg_gpu (int ib, int ie, int jb, int je, int kb, int ke, int* wind,
 		   int nx, int ny, int nz, float_sw4* a_u, float_sw4 h, boundaryConditionType *bccnd,
