@@ -88,7 +88,8 @@ class EW
    bool check_for_nan_GPU( vector<Sarray>& a_U, int verbose, string name );
    bool check_for_match_on_cpu_gpu( vector<Sarray>& a_U, int verbose, string name );
    void cycleSolutionArrays(vector<Sarray> & a_Um, vector<Sarray> & a_U,
-			    vector<Sarray> & a_Up ) ;
+			    vector<Sarray> & a_Up, Sarray*& dev_Um,
+			    Sarray*& dev_U, Sarray*& dev_Up );
    void Force(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSource*> point_sources, bool tt );
    void ForceCU( float_sw4 a_t, Sarray* dev_F, bool tt, int st );
    void evalRHS( vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
@@ -317,6 +318,17 @@ class EW
                                              vector<Sarray> & a_Um, vector<Sarray> & a_Rho, int st);
    void addSuperGridDampingCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
                                      vector<Sarray> & a_Um, vector<Sarray> & a_Rho, int st);
+   void extractRecordDataCU( int nt, int* mode, int* i0v, int* j0v, int* k0v,
+			     int* g0v, float_sw4** urec_dev, Sarray* dev_Um, Sarray* dev_U,
+			     float_sw4 dt, float_sw4* h_dev, Sarray* dev_metric,
+			     Sarray* dev_j, int st, int nvals, float_sw4* urec_hostmem,
+			     float_sw4* urec_devmem );
+
+   void allocateTimeSeriesOnDeviceCU( int& nvals, int& ntloc, int*& i0dev,
+				      int*& j0dev, int*& k0dev, int*& g0dev,
+				      int*& modedev, float_sw4**& urec_dev,
+				      float_sw4**& urec_host, float_sw4**& urec_hdev );
+
  
    // DG stuff
    int m_qu;

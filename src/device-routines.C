@@ -13567,5 +13567,207 @@ __global__ void BufferToHaloKernelY_dev_rev(float_sw4* block_up, float_sw4* bloc
 
 }
 
+#include "TimeSeries.h"
+
+// Code to extract time series data on GPU
+//-----------------------------------------------------------------------
+__global__ void extractRecordData_dev( int nt, int* mode, int* i0v, int* j0v, int* k0v,
+				       int* g0v, float_sw4** uRec, Sarray* Um2, Sarray* U,
+				       float_sw4 dt, float_sw4* h, int numberOfCartesianGrids,
+				       Sarray* Metric, Sarray* J )
+{
+   size_t nthreads = static_cast<size_t> (gridDim.x) * (blockDim.x);
+   size_t myid = threadIdx.x + blockIdx.x * blockDim.x;
+   Sarray& mMetric = *Metric;
+   Sarray& mJ = *J;
+   for( size_t ts=myid ; ts < nt ; ts += nthreads )
+   {
+      int i0 = i0v[ts];
+      int j0 = j0v[ts];
+      int k0 = k0v[ts];
+      int g0 = g0v[ts];
+      if (mode[ts] == TimeSeries::Displacement)
+      {
+	 uRec[ts][0] = U[g0](1, i0, j0, k0,true);
+	 uRec[ts][1] = U[g0](2, i0, j0, k0,true);
+	 uRec[ts][2] = U[g0](3, i0, j0, k0,true);
+      }
+      else if (mode[ts] ==  TimeSeries::Velocity)
+      {
+	 uRec[ts][0] = (U[g0](1, i0, j0, k0,true) - Um2[g0](1, i0, j0, k0,true))/(2*dt);
+	 uRec[ts][1] = (U[g0](2, i0, j0, k0,true) - Um2[g0](2, i0, j0, k0,true))/(2*dt);
+	 uRec[ts][2] = (U[g0](3, i0, j0, k0,true) - Um2[g0](3, i0, j0, k0,true))/(2*dt);
+      }
+      else if(mode[ts] ==  TimeSeries::Div)
+      {
+	 if (g0 < numberOfCartesianGrids) // must be a Cartesian grid
+	 {
+	    float_sw4 factor = 1.0/(2*h[g0]);
+	    uRec[ts][0] = ((U[g0](1,i0+1, j0, k0,true) - U[g0](1,i0-1, j0, k0,true)+
+			    U[g0](2,i0, j0+1, k0,true) - U[g0](2,i0, j0-1, k0,true)+
+			    U[g0](3,i0, j0, k0+1,true) - U[g0](3,i0, j0, k0-1,true))*factor);
+	 }
+	 else // must be curvilinear
+	 {
+	    float_sw4 factor = 0.5/sqrt(mJ(i0,j0,k0,true));
+	    uRec[ts][0] = ( ( mMetric(1,i0,j0,k0,true)*(U[g0](1,i0+1,j0,k0,true) - U[g0](1,i0-1,j0,k0,true))+
+			      mMetric(1,i0,j0,k0,true)*(U[g0](2,i0,j0+1,k0,true) - U[g0](2,i0,j0-1,k0,true))+
+			      mMetric(2,i0,j0,k0,true)*(U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true))+
+			      mMetric(3,i0,j0,k0,true)*(U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true))+
+			      mMetric(4,i0,j0,k0,true)*(U[g0](3,i0,j0,k0+1,true) - U[g0](3,i0,j0,k0-1,true))  )*factor);
+	 }
+      } // end div
+      else if(mode[ts] ==  TimeSeries::Curl)
+      {
+	 if (g0 < numberOfCartesianGrids) // must be a Cartesian grid
+	 {
+	    float_sw4 factor = 1.0/(2*h[g0]);
+	    float_sw4 duydx = (U[g0](2,i0+1,j0,k0,true) - U[g0](2,i0-1,j0,k0,true))*factor;
+	    float_sw4 duzdx = (U[g0](3,i0+1,j0,k0,true) - U[g0](3,i0-1,j0,k0,true))*factor;
+	    float_sw4 duxdy = (U[g0](1,i0,j0+1,k0,true) - U[g0](1,i0,j0-1,k0,true))*factor;
+	    float_sw4 duzdy = (U[g0](3,i0,j0+1,k0,true) - U[g0](3,i0,j0-1,k0,true))*factor;
+	    float_sw4 duxdz = (U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true))*factor;
+	    float_sw4 duydz = (U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true))*factor;
+	    uRec[ts][0] = ( duzdy-duydz );
+	    uRec[ts][1] = ( duxdz-duzdx );
+	    uRec[ts][2] = ( duydx-duxdy );
+	 }
+	 else // must be curvilinear
+	 {
+	    float_sw4 factor = 0.5/sqrt(mJ(i0,j0,k0,true));
+	    float_sw4 duxdq = (U[g0](1,i0+1,j0,k0,true) - U[g0](1,i0-1,j0,k0,true));
+	    float_sw4 duydq = (U[g0](2,i0+1,j0,k0,true) - U[g0](2,i0-1,j0,k0,true));
+	    float_sw4 duzdq = (U[g0](3,i0+1,j0,k0,true) - U[g0](3,i0-1,j0,k0,true));
+	    float_sw4 duxdr = (U[g0](1,i0,j0+1,k0,true) - U[g0](1,i0,j0-1,k0,true));
+	    float_sw4 duydr = (U[g0](2,i0,j0+1,k0,true) - U[g0](2,i0,j0-1,k0,true));
+	    float_sw4 duzdr = (U[g0](3,i0,j0+1,k0,true) - U[g0](3,i0,j0-1,k0,true));
+	    float_sw4 duxds = (U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true));
+	    float_sw4 duyds = (U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true));
+	    float_sw4 duzds = (U[g0](3,i0,j0,k0+1,true) - U[g0](3,i0,j0,k0-1,true));
+
+	    float_sw4 duydx = mMetric(1,i0,j0,k0,true)*duydq+mMetric(2,i0,j0,k0,true)*duyds;
+	    float_sw4 duzdx = mMetric(1,i0,j0,k0,true)*duzdq+mMetric(2,i0,j0,k0,true)*duzds;
+	    float_sw4 duxdy = mMetric(1,i0,j0,k0,true)*duxdr+mMetric(3,i0,j0,k0,true)*duxds;
+	    float_sw4 duzdy = mMetric(1,i0,j0,k0,true)*duzdr+mMetric(3,i0,j0,k0,true)*duzds;
+	    float_sw4 duydz = mMetric(4,i0,j0,k0,true)*duyds;
+	    float_sw4 duxdz = mMetric(4,i0,j0,k0,true)*duxds;
+
+	    uRec[ts][0] = (duzdy-duydz)*factor;
+	    uRec[ts][1] = (duxdz-duzdx)*factor;
+	    uRec[ts][2] = (duydx-duxdy)*factor;
+	 }
+      } // end Curl
+      else if(mode[ts] ==  TimeSeries::Strains )
+      {
+	 if (g0 < numberOfCartesianGrids) // must be a Cartesian grid
+	 {
+	    float_sw4 factor = 1.0/(2*h[g0]);
+	    float_sw4 duydx = (U[g0](2,i0+1,j0,k0,true) - U[g0](2,i0-1,j0,k0,true))*factor;
+	    float_sw4 duzdx = (U[g0](3,i0+1,j0,k0,true) - U[g0](3,i0-1,j0,k0,true))*factor;
+	    float_sw4 duxdy = (U[g0](1,i0,j0+1,k0,true) - U[g0](1,i0,j0-1,k0,true))*factor;
+	    float_sw4 duzdy = (U[g0](3,i0,j0+1,k0,true) - U[g0](3,i0,j0-1,k0,true))*factor;
+	    float_sw4 duxdz = (U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true))*factor;
+	    float_sw4 duydz = (U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true))*factor;
+	    float_sw4 duxdx = (U[g0](1,i0+1,j0,k0,true) - U[g0](1,i0-1,j0,k0,true))*factor;
+	    float_sw4 duydy = (U[g0](2,i0,j0+1,k0,true) - U[g0](2,i0,j0-1,k0,true))*factor;
+	    float_sw4 duzdz = (U[g0](3,i0,j0,k0+1,true) - U[g0](3,i0,j0,k0-1,true))*factor;
+	    uRec[ts][0] = ( duxdx );
+	    uRec[ts][1] = ( duydy );
+	    uRec[ts][2] = ( duzdz );
+	    uRec[ts][3] = ( 0.5*(duydx+duxdy) );
+	    uRec[ts][4] = ( 0.5*(duzdx+duxdz) );
+	    uRec[ts][5] = ( 0.5*(duydz+duzdy) );
+	 }
+	 else // must be curvilinear
+	 {
+	    float_sw4 factor = 0.5/sqrt(mJ(i0,j0,k0,true));
+	    float_sw4 duxdq = (U[g0](1,i0+1,j0,k0,true) - U[g0](1,i0-1,j0,k0,true));
+	    float_sw4 duydq = (U[g0](2,i0+1,j0,k0,true) - U[g0](2,i0-1,j0,k0,true));
+	    float_sw4 duzdq = (U[g0](3,i0+1,j0,k0,true) - U[g0](3,i0-1,j0,k0,true));
+	    float_sw4 duxdr = (U[g0](1,i0,j0+1,k0,true) - U[g0](1,i0,j0-1,k0,true));
+	    float_sw4 duydr = (U[g0](2,i0,j0+1,k0,true) - U[g0](2,i0,j0-1,k0,true));
+	    float_sw4 duzdr = (U[g0](3,i0,j0+1,k0,true) - U[g0](3,i0,j0-1,k0,true));
+	    float_sw4 duxds = (U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true));
+	    float_sw4 duyds = (U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true));
+	    float_sw4 duzds = (U[g0](3,i0,j0,k0+1,true) - U[g0](3,i0,j0,k0-1,true));
+	    float_sw4 duzdy = (mMetric(1,i0,j0,k0,true)*duzdr+mMetric(3,i0,j0,k0,true)*duzds)*factor;
+	    float_sw4 duydz = (mMetric(4,i0,j0,k0,true)*duyds)*factor;
+	    float_sw4 duxdz = (mMetric(4,i0,j0,k0,true)*duxds)*factor;
+	    float_sw4 duzdx = (mMetric(1,i0,j0,k0,true)*duzdq+mMetric(2,i0,j0,k0,true)*duzds)*factor;
+	    float_sw4 duydx = (mMetric(1,i0,j0,k0,true)*duydq+mMetric(2,i0,j0,k0,true)*duyds)*factor;
+	    float_sw4 duxdy = (mMetric(1,i0,j0,k0,true)*duxdr+mMetric(3,i0,j0,k0,true)*duxds)*factor;
+	    float_sw4 duxdx = ( mMetric(1,i0,j0,k0,true)*(U[g0](1,i0+1,j0,k0,true) - U[g0](1,i0-1,j0,k0,true))+
+				mMetric(2,i0,j0,k0,true)*(U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true)) )*factor;
+	    float_sw4 duydy = ( mMetric(1,i0,j0,k0,true)*(U[g0](2,i0,j0+1,k0,true) - U[g0](2,i0,j0-1,k0,true))+
+				mMetric(3,i0,j0,k0,true)*(U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true)) )*factor;
+	    float_sw4 duzdz = ( mMetric(4,i0,j0,k0,true)*(U[g0](3,i0,j0,k0+1,true) - U[g0](3,i0,j0,k0-1,true)) )*factor;
+	    uRec[ts][0] = ( duxdx );
+	    uRec[ts][1] = ( duydy );
+	    uRec[ts][2] = ( duzdz );
+	    uRec[ts][3] = ( 0.5*(duydx+duxdy) );
+	    uRec[ts][4] = ( 0.5*(duzdx+duxdz) );
+	    uRec[ts][5] = ( 0.5*(duydz+duzdy) );
+	 }
+      } // end Strains
+      else if(mode[ts] ==  TimeSeries::DisplacementGradient )
+      {
+	 if (g0 < numberOfCartesianGrids) // must be a Cartesian grid
+	 {
+	    float_sw4 factor = 1.0/(2*h[g0]);
+	    float_sw4 duydx = (U[g0](2,i0+1,j0,k0,true) - U[g0](2,i0-1,j0,k0,true))*factor;
+	    float_sw4 duzdx = (U[g0](3,i0+1,j0,k0,true) - U[g0](3,i0-1,j0,k0,true))*factor;
+	    float_sw4 duxdy = (U[g0](1,i0,j0+1,k0,true) - U[g0](1,i0,j0-1,k0,true))*factor;
+	    float_sw4 duzdy = (U[g0](3,i0,j0+1,k0,true) - U[g0](3,i0,j0-1,k0,true))*factor;
+	    float_sw4 duxdz = (U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true))*factor;
+	    float_sw4 duydz = (U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true))*factor;
+	    float_sw4 duxdx = (U[g0](1,i0+1,j0,k0,true) - U[g0](1,i0-1,j0,k0,true))*factor;
+	    float_sw4 duydy = (U[g0](2,i0,j0+1,k0,true) - U[g0](2,i0,j0-1,k0,true))*factor;
+	    float_sw4 duzdz = (U[g0](3,i0,j0,k0+1,true) - U[g0](3,i0,j0,k0-1,true))*factor;
+	    uRec[ts][0] =  duxdx;
+	    uRec[ts][1] =  duxdy;
+	    uRec[ts][2] =  duxdz;
+	    uRec[ts][3] =  duydx;
+	    uRec[ts][4] =  duydy;
+	    uRec[ts][5] =  duydz;
+	    uRec[ts][6] =  duzdx;
+	    uRec[ts][7] =  duzdy;
+	    uRec[ts][8] =  duzdz;
+	 }
+	 else // must be curvilinear
+	 {
+	    float_sw4 factor = 0.5/sqrt(mJ(i0,j0,k0,true));
+	    float_sw4 duxdq = (U[g0](1,i0+1,j0,k0,true) - U[g0](1,i0-1,j0,k0,true));
+	    float_sw4 duydq = (U[g0](2,i0+1,j0,k0,true) - U[g0](2,i0-1,j0,k0,true));
+	    float_sw4 duzdq = (U[g0](3,i0+1,j0,k0,true) - U[g0](3,i0-1,j0,k0,true));
+	    float_sw4 duxdr = (U[g0](1,i0,j0+1,k0,true) - U[g0](1,i0,j0-1,k0,true));
+	    float_sw4 duydr = (U[g0](2,i0,j0+1,k0,true) - U[g0](2,i0,j0-1,k0,true));
+	    float_sw4 duzdr = (U[g0](3,i0,j0+1,k0,true) - U[g0](3,i0,j0-1,k0,true));
+	    float_sw4 duxds = (U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true));
+	    float_sw4 duyds = (U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true));
+	    float_sw4 duzds = (U[g0](3,i0,j0,k0+1,true) - U[g0](3,i0,j0,k0-1,true));
+	    float_sw4 duzdy = (mMetric(1,i0,j0,k0,true)*duzdr+mMetric(3,i0,j0,k0,true)*duzds)*factor;
+	    float_sw4 duydz = (mMetric(4,i0,j0,k0,true)*duyds)*factor;
+	    float_sw4 duxdz = (mMetric(4,i0,j0,k0,true)*duxds)*factor;
+	    float_sw4 duzdx = (mMetric(1,i0,j0,k0,true)*duzdq+mMetric(2,i0,j0,k0,true)*duzds)*factor;
+	    float_sw4 duydx = (mMetric(1,i0,j0,k0,true)*duydq+mMetric(2,i0,j0,k0,true)*duyds)*factor;
+	    float_sw4 duxdy = (mMetric(1,i0,j0,k0,true)*duxdr+mMetric(3,i0,j0,k0,true)*duxds)*factor;
+	    float_sw4 duxdx = ( mMetric(1,i0,j0,k0,true)*(U[g0](1,i0+1,j0,k0,true) - U[g0](1,i0-1,j0,k0,true))+
+				mMetric(2,i0,j0,k0,true)*(U[g0](1,i0,j0,k0+1,true) - U[g0](1,i0,j0,k0-1,true)) )*factor;
+	    float_sw4 duydy = ( mMetric(1,i0,j0,k0,true)*(U[g0](2,i0,j0+1,k0,true) - U[g0](2,i0,j0-1,k0,true))+
+				mMetric(3,i0,j0,k0,true)*(U[g0](2,i0,j0,k0+1,true) - U[g0](2,i0,j0,k0-1,true)) )*factor;
+	    float_sw4 duzdz = ( mMetric(4,i0,j0,k0,true)*(U[g0](3,i0,j0,k0+1,true) - U[g0](3,i0,j0,k0-1,true)) )*factor;
+	    uRec[ts][0] =  duxdx;
+	    uRec[ts][1] =  duxdy;
+	    uRec[ts][2] =  duxdz;
+	    uRec[ts][3] =  duydx;
+	    uRec[ts][4] =  duydy;
+	    uRec[ts][5] =  duydz;
+	    uRec[ts][6] =  duzdx;
+	    uRec[ts][7] =  duzdy;
+	    uRec[ts][8] =  duzdz;
+	 }
+      }// end DisplacementGradient
+   } 
+}
 
 #endif

@@ -51,238 +51,6 @@
 
 #include <cuda_runtime.h>
 
-
-
-//void copy_stencilcoefficients( float_sw4* acof, float_sw4* ghcof, float_sw4* bope );
-void copy_stencilcoefficients1( float_sw4* acof, float_sw4* ghcof, float_sw4* bope, float_sw4*  );
-
-
-
-__global__ void pred_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			  float_sw4* up, float_sw4* u, float_sw4* um, float_sw4* lu, float_sw4* fo,
-			  float_sw4* rho, float_sw4 dt2, int ghost_points );
-
-__global__ void pred_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			  float_sw4* up, float_sw4* u, float_sw4* um, float_sw4* lu, float_sw4* fo,
-			  float_sw4* rho, float_sw4 dt2, int ghost_points );
-
-__global__ void corr_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			  float_sw4* up, float_sw4* lu, float_sw4* fo,
-			  float_sw4* rho, float_sw4 dt4, int ghost_points );
-
-__global__ void corr_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			  float_sw4* up, float_sw4* lu, float_sw4* fo,
-			  float_sw4* rho, float_sw4 dt4, int ghost_points );
-
-__global__ void dpdmt_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			   float_sw4* up, float_sw4* u, float_sw4* um,
-			   float_sw4* u2, float_sw4 dt2i, int ghost_points );
-
-__global__ void addsgd4_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			     float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-			     float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
-			     float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			     float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
-			     float_sw4 beta, int ghost_points );
-
-__global__ void addsgd4_dev_v2( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			     float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-			     float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
-			     float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			     float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
-			     float_sw4 beta, int ghost_points );
-
-__global__ void addsgd4_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			     float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-			     float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
-			     float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			     float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
-			     float_sw4 beta, int ghost_points );
-
-__global__ void addsgd4_dev_rev_v2( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                    float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-                                    float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
-                                    float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-                                    float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
-                                    float_sw4 beta, int ghost_points );
-
-__global__ void addsgd6_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			     float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-			     float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
-			     float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			     float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
-			     float_sw4 beta, int ghost_points );
-
-__global__ void addsgd6_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			     float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-			     float_sw4* a_dcx,  float_sw4* a_dcy,  float_sw4* a_dcz,
-			     float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			     float_sw4* a_cox,  float_sw4* a_coy,  float_sw4* a_coz,
-			     float_sw4 beta, int ghost_points );
-
-__global__ void rhs4center_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-				float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, 
-				float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-				int ghost_points );
-
-__global__ void rhs4center_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-				float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, 
-				float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-				int ghost_points );
-
-__global__ void rhs4center_dev_v2( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                       float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda,
-                                       float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-                                       int ghost_points );
-
-__global__ void rhs4center_dev_rev_v2( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                       float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda,
-                                       float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-                                       int ghost_points );
-
-__global__ void rhs4upper_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			       float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, 
-			       float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			       int ghost_points );
-
-__global__ void rhs4upper_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			       float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, 
-			       float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			       int ghost_points );
-
-__global__ void rhs4lower_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			       int nk, float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, 
-			       float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			       int ghost_points );
-
-__global__ void rhs4lower_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-				   int nk, float_sw4* a_lu, float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, 
-			       float_sw4 h, float_sw4* a_strx, float_sw4* a_stry, float_sw4* a_strz,
-			       int ghost_points );
-
-__global__ void rhs4sgcurv_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                       float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* mMetric,
-                                       float_sw4* mJ, float_sw4* a_lu, 
-                                       int onesided4, float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
-
-__global__ void rhs4sgcurv_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                       float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* mMetric,
-                                       float_sw4* mJ, float_sw4* a_lu, 
-                                       int onesided4, float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
-
-__global__ void rhs4sgcurv_dev_rev_v2( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-				float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* a_met, float_sw4* a_jac, float_sw4* a_lu, 
-				int onesided4, float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
-
-__global__ void rhs4sgcurvupper_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                       float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* mMetric,
-                                       float_sw4* mJ, float_sw4* a_lu, 
-                                       float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
-
-__global__ void rhs4sgcurvupper_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                       float_sw4* a_u, float_sw4* a_mu, float_sw4* a_lambda, float_sw4* mMetric,
-                                       float_sw4* mJ, float_sw4* a_lu, 
-                                       float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
-
-__global__ void check_nan_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-			       float_sw4* u, int* retval_dev, int* idx_dev );
-
-__global__ void forcing_dev( float_sw4 t, Sarray* dev_F, int NumberOfGrids, GridPointSource** dev_point_sources,
-			     int nptsrc, int* dev_identsources, int nident, bool tt );
-__global__ void init_forcing_dev( GridPointSource** point_sources, int nsrc );
-
-__global__ void BufferToHaloKernel_dev(float_sw4* block_left, float_sw4* block_right, float_sw4* block_up, float_sw4* block_down,
-                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, float_sw4 * upSideEdge, float_sw4 * downSideEdge,
-                        int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,const int  m_neighbor1, const int m_neighbor2,
-                        const int m_neighbor3, const int mpi_process_null_cuda);
-
-__global__ void BufferToHaloKernel_dev_rev(float_sw4* block_left, float_sw4* block_right, float_sw4* block_up, float_sw4* block_down,
-                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, float_sw4 * upSideEdge, float_sw4 * downSideEdge,
-                        int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,const int  m_neighbor1, const int m_neighbor2,
-                        const int m_neighbor3, const int mpi_process_null_cuda);
-
-__global__ void BufferToHaloKernel_dev_rev_v2(float_sw4* block_left, float_sw4* block_right,
-                float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
-                int ni, int nj, int nk, int m_padding, int size, int nstep, const int m_neighbor_left ,const int  m_neighbor_right, const int mpi_process_null );
-
-__global__ void HaloToBufferKernel_dev(float_sw4* block_left, float_sw4* block_right, float_sw4* block_up, float_sw4* block_down,
-                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, float_sw4 * upSideEdge, float_sw4 * downSideEdge,
-                        int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,const int  m_neighbor1, const int m_neighbor2,
-                        const int m_neighbor3, const int mpi_process_null_cuda);
-
-__global__ void HaloToBufferKernel_dev_rev(float_sw4* block_left, float_sw4* block_right, float_sw4* block_up, float_sw4* block_down,
-                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge, float_sw4 * upSideEdge, float_sw4 * downSideEdge,
-                        int ni, int nj, int nk, int m_padding, const int m_neighbor0 ,const int  m_neighbor1, const int m_neighbor2,
-                        const int m_neighbor3, const int mpi_process_null_cuda);
-
-__global__ void HaloToBufferKernel_dev_rev_v2(float_sw4* block_left, float_sw4* block_right,
-                        float_sw4 * leftSideEdge, float_sw4 * rightSideEdge,
-                        int ni, int nj, int nk, int m_padding, int size, int nstep, const int m_neighbor_left ,const int  m_neighbor_right, const int mpi_process_null);
-
-__global__ void bcfortsg_dev( int ib, int ie, int jb, int je, int kb, int ke, int* wind,
-                              int nx, int ny, int nz, float_sw4* u, float_sw4 h, boundaryConditionType *bccnd,
-                              float_sw4* mu, float_sw4* la, float_sw4 t,
-                              float_sw4* bforce1, float_sw4* bforce2, float_sw4* bforce3,
-                              float_sw4* bforce4, float_sw4* bforce5, float_sw4* bforce6,
-                              float_sw4 om, float_sw4 ph, float_sw4 cv,
-                              float_sw4* strx, float_sw4* stry );
-
-
-__global__ void bcfortsg_dev_indrev( int ib, int ie, int jb, int je, int kb, int ke, int* wind,
-                                     int nx, int ny, int nz, float_sw4* u, float_sw4 h, boundaryConditionType *bccnd,
-                                     float_sw4* mu, float_sw4* la, float_sw4 t,
-                                     float_sw4* bforce1, float_sw4* bforce2, float_sw4* bforce3,
-                                     float_sw4* bforce4, float_sw4* bforce5, float_sw4* bforce6,
-                                     float_sw4 om, float_sw4 ph, float_sw4 cv,
-                                     float_sw4* strx, float_sw4* stry );
-
-__global__ void freesurfcurvisg_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                     int nz, int side, float_sw4* a_u, float_sw4* a_mu, 
-                                     float_sw4* a_la, float_sw4* a_met,
-                                     float_sw4* bforce5,float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
-
-__global__ void freesurfcurvisg_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-                                     int nz, int side, float_sw4* a_u, float_sw4* a_mu, 
-                                     float_sw4* a_la, float_sw4* a_met,
-                                     float_sw4* bforce5,float_sw4* a_strx, float_sw4* a_stry, int ghost_points );
-
-__global__ void enforceCartTopo_dev_rev( int ifirstCart, int ilastCart, int jfirstCart, int jlastCart, int kfirstCart, int klastCart,
-                                         int ifirstCurv, int ilastCurv, int jfirstCurv, int jlastCurv, int kfirstCurv, int klastCurv,
-                                         float_sw4* a_u1, float_sw4* a_u2, int ghost_points );
-
-__global__ void enforceCartTopo_dev( int ifirstCart, int ilastCart, int jfirstCart, int jlastCart, int kfirstCart, int klastCart,
-                                         int ifirstCurv, int ilastCurv, int jfirstCurv, int jlastCurv, int kfirstCurv, int klastCurv,
-                                         float_sw4* a_u1, float_sw4* a_u2, int ghost_points );
-
-__global__ void addsgd4c_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-		      float_sw4* a_up, float_sw4* a_u, 
-                      float_sw4* a_um, float_sw4* a_rho,
-		      float_sw4* a_dcx,  float_sw4* a_dcy, 
-                      float_sw4* a_strx, float_sw4* a_stry, 
-		      float_sw4* a_jac, float_sw4* a_cox,  float_sw4* a_coy, 
-                      float_sw4 beta, int ghost_points );
-
-__global__ void addsgd4c_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-		      float_sw4* a_up, float_sw4* a_u, 
-                      float_sw4* a_um, float_sw4* a_rho,
-		      float_sw4* a_dcx,  float_sw4* a_dcy, 
-                      float_sw4* a_strx, float_sw4* a_stry, 
-		      float_sw4* a_jac, float_sw4* a_cox,  float_sw4* a_coy, 
-                      float_sw4 beta, int ghost_points );
-
-__global__ void addsgd6c_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-		      float_sw4* a_dcx,  float_sw4* a_dcy, 
-		      float_sw4* a_strx, float_sw4* a_stry,
-		      float_sw4* a_jac, float_sw4* a_cox,  float_sw4* a_coy,  
-		      float_sw4 beta, int ghost_points );
-
-__global__ void addsgd6c_dev_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
-		      float_sw4* a_up, float_sw4* a_u, float_sw4* a_um, float_sw4* a_rho,
-		      float_sw4* a_dcx,  float_sw4* a_dcy, 
-		      float_sw4* a_strx, float_sw4* a_stry,
-		      float_sw4* a_jac, float_sw4* a_cox,  float_sw4* a_coy,  
-		      float_sw4 beta, int ghost_points );
 #endif
   
 //-----------------------------------------------------------------------
@@ -2239,6 +2007,126 @@ void EW::enforceBCCU( vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>
                   t, dev_BCForcing[g][0], dev_BCForcing[g][1], dev_BCForcing[g][2],
                   dev_BCForcing[g][3], dev_BCForcing[g][4], dev_BCForcing[g][5],
                   om, ph, cv, dev_sg_str_x[g], dev_sg_str_y[g], m_corder, m_cuobj->m_stream[st]);
+#endif
+}
+
+//-----------------------------------------------------------------------
+void EW::allocateTimeSeriesOnDeviceCU( int& nvals, int& ntloc, int*& i0dev,
+				       int*& j0dev, int*& k0dev, int*& g0dev,
+				       int*& modedev, float_sw4**& urec_dev,
+				       float_sw4**& urec_host, float_sw4**& urec_hdev )
+{
+   // urec_dev:  array of pointers on device pointing to device memory
+   // urec_host: array of pointers on host pointing to host memory
+   // urec_hdev: array of pointers on host pointing to device memory
+#ifdef SW4_CUDA
+  vector<int> i0vect, j0vect, k0vect, g0vect;
+  vector<int> modevect;
+  // Save location and type of stations, and count their number (ntloc), 
+  // and the total size of memory needed (nvals)
+  for (int ts=0; ts<m_GlobalTimeSeries.size(); ts++)
+  {
+     if ( m_GlobalTimeSeries[ts]->myPoint())
+     {
+	i0vect.push_back(m_GlobalTimeSeries[ts]->m_i0);
+	j0vect.push_back(m_GlobalTimeSeries[ts]->m_j0);
+	k0vect.push_back(m_GlobalTimeSeries[ts]->m_k0);
+	g0vect.push_back(m_GlobalTimeSeries[ts]->m_grid0);
+	modevect.push_back(m_GlobalTimeSeries[ts]->getMode());
+	nvals += m_GlobalTimeSeries[ts]->urec_size();
+     }
+  }
+  ntloc=i0vect.size();
+
+  // Allocate memory on host
+  urec_host = new float_sw4*[ntloc];
+  urec_hdev = new float_sw4*[ntloc]; 
+  cudaError_t  retval;
+  if( ntloc > 0 )
+  {
+  // Allocate memory on device, and copy the location to vectors on device 
+     retval = cudaMalloc( (void**)&i0dev, sizeof(int)*ntloc);
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMalloc of i0dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMalloc( (void**)&j0dev, sizeof(int)*ntloc);
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMalloc of j0dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMalloc( (void**)&k0dev, sizeof(int)*ntloc);
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMalloc of k0dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMalloc( (void**)&g0dev, sizeof(int)*ntloc);
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMalloc of g0dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMalloc( (void**)&modedev, sizeof(int)*ntloc);
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMalloc of modedev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMemcpy( i0dev,  &i0vect[0], sizeof(int)*ntloc, cudaMemcpyHostToDevice );
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMmemcpy of i0dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMemcpy( j0dev,  &j0vect[0], sizeof(int)*ntloc, cudaMemcpyHostToDevice );
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMmemcpy of j0dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMemcpy( k0dev,  &k0vect[0], sizeof(int)*ntloc, cudaMemcpyHostToDevice );
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMmemcpy of k0dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMemcpy( g0dev,  &g0vect[0], sizeof(int)*ntloc, cudaMemcpyHostToDevice );
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMmemcpy of g0dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMemcpy( modedev,  &modevect[0], sizeof(int)*ntloc, cudaMemcpyHostToDevice );
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMmemcpy of modedev retval = " <<cudaGetErrorString(retval) << endl;
+
+    // Allocate memory on host and and device to hold the data 
+     float_sw4* devmem;
+     retval = cudaMalloc( (void**)&devmem, sizeof(float_sw4)*nvals);
+     float_sw4* hostmem = new float_sw4[nvals];
+
+     size_t ptr=0;
+     int tsnr=0;
+     for( int ts=0; ts<m_GlobalTimeSeries.size(); ts++)
+     {
+	if ( m_GlobalTimeSeries[ts]->myPoint() )
+	{
+	   urec_hdev[tsnr] = &devmem[ptr];
+	   urec_host[tsnr] = &hostmem[ptr];
+	   ptr += m_GlobalTimeSeries[ts]->urec_size();
+	   tsnr++;
+	}
+     }
+    // Create and allocate pointer to pointers on device
+     retval = cudaMalloc( (void**)&urec_dev, sizeof(float_sw4*)*ntloc);
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMalloc of urec_dev retval = " <<cudaGetErrorString(retval) << endl;
+     retval = cudaMemcpy( urec_dev, urec_hdev, sizeof(float_sw4*)*ntloc, cudaMemcpyHostToDevice);
+     if( retval != cudaSuccess )
+	cout << "Error in cudaMmemcpy of urec_dev retval = " <<cudaGetErrorString(retval) << endl;
+  }
+#endif
+}
+
+//-----------------------------------------------------------------------
+void EW::extractRecordDataCU( int nt, int* mode, int* i0v, int* j0v, int* k0v,
+			      int* g0v, float_sw4** urec_dev, Sarray* dev_Um, Sarray* dev_U,
+			      float_sw4 dt, float_sw4* h_dev, Sarray* dev_metric,
+			      Sarray* dev_j, int st, int nvals, float_sw4* urec_hostmem,
+			      float_sw4* urec_devmem )
+{
+#ifdef SW4_CUDA
+   dim3 blocksize, gridsize;
+   gridsize.x  = m_gpu_gridsize[0] * m_gpu_gridsize[1] * m_gpu_gridsize[2];
+   gridsize.y  = 1;
+   gridsize.z  = 1;
+   blocksize.x = m_gpu_blocksize[0] * m_gpu_blocksize[1] * m_gpu_blocksize[2];
+   blocksize.y = 1;
+   blocksize.z = 1;
+   extractRecordData_dev<<<gridsize, blocksize, 0, m_cuobj->m_stream[st]>>>( 
+		          nt, mode, i0v, j0v,
+		          k0v, g0v, urec_dev, dev_Um, dev_U,
+			  dt, h_dev, mNumberOfCartesianGrids, dev_metric, dev_j );
+   cudaError_t retval = cudaMemcpy( urec_hostmem, urec_devmem, sizeof(float_sw4)*nvals, cudaMemcpyDeviceToHost );
+   if( retval != cudaSuccess )
+      cout << "Error in cudaMemcpy in EW::extractRecordDataCU retval = " <<cudaGetErrorString(retval) << endl;
+   
 #endif
 }
 

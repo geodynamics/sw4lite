@@ -389,4 +389,9 @@ void bcfortsg_gpu (int ib, int ie, int jb, int je, int kb, int ke, int* wind,
 		   float_sw4 om, float_sw4 ph, float_sw4 cv,
 		   float_sw4* strx, float_sw4* stry, int c_order, cudaStream_t stream);
 
+__global__ void extractRecordData_dev( int nt, int* mode, int* i0v, int* j0v, int* k0v,
+				       int* g0v, float_sw4** urec, Sarray* Um2, Sarray* U,
+				       float_sw4 dt, float_sw4* h, int numberOfCartesianGrids, 
+				       Sarray* mMetric, Sarray* mJ );
+
 #endif
