@@ -12572,6 +12572,250 @@ __global__ void addsgd4 (int ifirst, int ilast, int jfirst, int jlast, int kfirs
   } // End K loop
 }
 
+template <bool c_order>
+// No launch_bounds here, it decreases performance.
+__launch_bounds__(BX*BY,1)
+__global__ void addsgd4_no_SM (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast, 
+			 int ni, int nj, int nk,
+			 float_sw4* __restrict__ a_up,
+			 const float_sw4* __restrict__ a_u,
+			 const float_sw4* __restrict__ a_um,
+			 const float_sw4* __restrict__ a_rho,
+			 const float_sw4* __restrict__ a_dcx,
+			 const float_sw4* __restrict__ a_dcy,
+			 const float_sw4* __restrict__ a_dcz,
+			 const float_sw4* __restrict__ a_strx,
+			 const float_sw4* __restrict__ a_stry,
+			 const float_sw4* __restrict__ a_strz,
+			 const float_sw4* __restrict__ a_cox,
+			 const float_sw4* __restrict__ a_coy,
+			 const float_sw4* __restrict__ a_coz,
+			 const float_sw4 beta) {
+  int index;
+  // I starts at 0 and covers the whole dimension
+  const int i = threadIdx.x + blockIdx.x * BX;
+  // J starts at jfirst
+  const int j = jfirst + threadIdx.y + blockIdx.y * BY;
+
+  const int nij = ni * nj;
+  const int nijk = nij * nk;
+
+  int active=0;
+
+  // Active threads doing the computation at (i+2,j)
+  if (i >= ifirst && i <= ilast && j >= jfirst && j <= jlast)
+    active = 1;
+
+
+  // Main loop on the K dimension
+  for (int k=kfirst; k <= klast; k++) {
+    index = k * nij + j * ni + i;
+    if (active) {
+      float_sw4 birho=beta/a_rho[index];
+      for( int c=0 ; c < 3 ; c++ )
+      {
+	 up(c,index) -= birho*(
+		  // x-differences
+		   a_strx[i]*a_coy[j]*a_coz[k]*(
+       a_rho[index+1]*a_dcx[i+1]*
+                   ( u(c,index+2) -2*u(c,index+1)+ u(c,index))
+      -2*a_rho[index]*a_dcx[i]  *
+                   ( u(c,index+1) -2*u(c,index)+ u(c,index-1))
+      +a_rho[index-1]*a_dcx[i-1]*
+                   ( u(c,index) -2*u(c,index-1)+ u(c,index-2)) 
+      -a_rho[index+1]*a_dcx[i+1]*
+                   (um(c,index+2)-2*um(c,index+1)+um(c,index)) 
+      +2*a_rho[index]*a_dcx[i]  *
+                   (um(c,index+1)-2*um(c,index)+um(c,index-1)) 
+      -a_rho[index-1]*a_dcx[i-1]*
+                   (um(c,index)-2*um(c,index-1)+um(c,index-2)) ) +
+// y-differences
+      a_stry[j]*a_cox[i]*a_coz[k]*(
+      +a_rho[index+ni]*a_dcy[j+1]*
+                   ( u(c,index+2*ni) -2*u(c,index+ni)+ u(c,index)) 
+      -2*a_rho[index]*a_dcy[j]  *
+                   ( u(c,index+ni) -2*u(c,index)+ u(c,index-ni))
+      +a_rho[index-ni]*a_dcy[j-1]*
+                   ( u(c,index) -2*u(c,index-ni)+ u(c,index-2*ni)) 
+      -a_rho[index+ni]*a_dcy[j+1]*
+                   (um(c,index+2*ni)-2*um(c,index+ni)+um(c,index)) 
+      +2*a_rho[index]*a_dcy[j]  *
+                   (um(c,index+ni)-2*um(c,index)+um(c,index-ni)) 
+      -a_rho[index-ni]*a_dcy[j-1]*
+                   (um(c,index)-2*um(c,index-ni)+um(c,index-2*ni)) ) +
+       a_strz[k]*a_cox[i]*a_coy[j]*(
+// z-differences
+      +a_rho[index+nij]*a_dcz[k+1]* 
+                 ( u(c,index+2*nij) -2*u(c,index+nij)+ u(c,index)) 
+      -2*a_rho[index]*a_dcz[k]  *
+                 ( u(c,index+nij) -2*u(c,index)+ u(c,index-nij))
+      +a_rho[index-nij]*a_dcz[k-1]*
+                 ( u(c,index) -2*u(c,index-nij)+ u(c,index-2*nij)) 
+      -a_rho[index+nij]*a_dcz[k+1]*
+                 (um(c,index+2*nij)-2*um(c,index+nij)+um(c,index)) 
+      +2*a_rho[index]*a_dcz[k]  *
+                 (um(c,index+nij)-2*um(c,index)+um(c,index-nij)) 
+      -a_rho[index-nij]*a_dcz[k-1]*
+                 (um(c,index)-2*um(c,index-nij)+um(c,index-2*nij)) ) 
+				);
+      }
+    } // End active
+
+  } // End K loop
+}
+
+template <bool c_order>
+// No launch_bounds here, it decreases performance.
+__launch_bounds__(BX*BY,1)
+__global__ void addsgd4_SM (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast, 
+			 int ni, int nj, int nk,
+			 float_sw4* __restrict__ a_up,
+			 const float_sw4* __restrict__ a_u,
+			 const float_sw4* __restrict__ a_um,
+			 const float_sw4* __restrict__ a_rho,
+			 const float_sw4* __restrict__ a_dcx,
+			 const float_sw4* __restrict__ a_dcy,
+			 const float_sw4* __restrict__ a_dcz,
+			 const float_sw4* __restrict__ a_strx,
+			 const float_sw4* __restrict__ a_stry,
+			 const float_sw4* __restrict__ a_strz,
+			 const float_sw4* __restrict__ a_cox,
+			 const float_sw4* __restrict__ a_coy,
+			 const float_sw4* __restrict__ a_coz,
+			 const float_sw4 beta) {
+  int index;
+  float_sw4 u_km2[3], u_km1[3], old_up[3];
+
+  __shared__ float_sw4 shu[3][3][BY+4][BX+4];
+
+  // I starts at 0 and covers the whole dimension
+  const int i = threadIdx.x + blockIdx.x * BX;
+  // J starts at jfirst
+  const int j = jfirst + threadIdx.y + blockIdx.y * BY;
+
+  const int ti = threadIdx.x + 2;
+  const int tj = threadIdx.y + 2;
+
+  const int nij = ni * nj;
+  const int nijk = nij * nk;
+
+  int active=0, loader=0, loady2=0, loaderx2=0;
+
+  // Active threads doing the computation at (i+2,j)
+  if (i+2 >= ifirst && i+2 <= ilast && j <= jlast)
+    active = 1;
+
+  if (i < ni && j-2 <= jlast+2) {
+    loader = 1;
+    if (threadIdx.x < 4 && i+BX < ni)
+      loaderx2 = 1;
+    if (threadIdx.y < 4 && j-2+BY <= jlast+2)
+      loady2 = 1;
+  }
+
+  if (active) {
+    // Load the first values of U-UM at (i+2, j, kfirst-2:kfirst-1)
+    int idx = (kfirst - 2) * nij + j * ni + i + 2;
+    for (int c=0; c<3; c++)
+      u_km2[c] = u(c,idx) - um(c,idx);
+    idx += nij;
+    for (int c=0; c<3; c++)
+      u_km1[c] = u(c,idx) - um(c,idx);
+  }
+
+  // Loading index for data with halos at (i,j-2,kfirst)
+  index = kfirst * nij + (j - 2) * ni + i;
+
+  // Load the 2 plans of U-UM in the shared memory, at kfirst and kfirst+1
+  // Also load Rho at kfirst in shared memory
+  for (int c=0; c<3; c++) {
+    if (loader) {
+      int idx = index;
+      shu[c][1][threadIdx.y][threadIdx.x] = u(c,idx) - um(c,idx);
+      shu[c][2][threadIdx.y][threadIdx.x] = u(c,idx+nij) - um(c,idx+nij);
+    }
+    if (loaderx2) {
+      int idx = index + BX;
+      shu[c][1][threadIdx.y][threadIdx.x+BX] = u(c,idx) - um(c,idx);
+      shu[c][2][threadIdx.y][threadIdx.x+BX] = u(c,idx+nij) - um(c,idx+nij);
+    }
+    if (loady2) {
+      int idx = index + BY * ni;
+      shu[c][1][threadIdx.y+BY][threadIdx.x] = u(c,idx) - um(c,idx);
+      shu[c][2][threadIdx.y+BY][threadIdx.x] = u(c,idx+nij) - um(c,idx+nij);
+    }
+    if (loady2 && loaderx2) {
+      int idx = index + BY * ni + BX;
+      shu[c][1][threadIdx.y+BY][threadIdx.x+BX] = u(c,idx) - um(c,idx);
+      shu[c][2][threadIdx.y+BY][threadIdx.x+BX] = u(c,idx+nij) - um(c,idx+nij);
+    }
+  }
+
+  // Move the index to kfirst+2
+  index += 2 * nij;
+
+  // Main loop on the K dimension
+  for (int k=kfirst; k <= klast; k++) {
+    __syncthreads();
+    // Rotate the shared memory and load (U-UM) at k+2
+    for (int c=0; c<3; c++) {
+      if (loader) { 
+        for (int s=0; s<2; s++)
+          shu[c][s][threadIdx.y][threadIdx.x] = shu[c][s+1][threadIdx.y][threadIdx.x];
+        int idx = index;
+        shu[c][2][threadIdx.y][threadIdx.x] = u(c,idx) - um(c,idx);
+      }
+      if (loaderx2) {
+        for (int s=0; s<2; s++)
+          shu[c][s][threadIdx.y][threadIdx.x+BX] = shu[c][s+1][threadIdx.y][threadIdx.x+BX];
+        int idx = index + BX;
+        shu[c][2][threadIdx.y][threadIdx.x+BX] = u(c,idx) - um(c,idx);
+      }
+      if (loady2) {
+        for (int s=0; s<2; s++)
+          shu[c][s][threadIdx.y+BY][threadIdx.x] = shu[c][s+1][threadIdx.y+BY][threadIdx.x];
+        int idx = index + BY * ni;
+        shu[c][2][threadIdx.y+BY][threadIdx.x] = u(c,idx) - um(c,idx);
+      }
+      if (loady2 && loaderx2) {
+        for (int s=0; s<2; s++)
+          shu[c][s][threadIdx.y+BY][threadIdx.x+BX] = shu[c][s+1][threadIdx.y+BY][threadIdx.x+BX];
+        int idx = index + BY * ni + BX;
+        shu[c][2][threadIdx.y+BY][threadIdx.x+BX] = u(c,idx) - um(c,idx);
+      }
+    }
+
+    // Move the loading index to the next K
+    index += nij;
+    __syncthreads();
+
+    if (active) {
+      int idx = k * nij + j * ni + i + 2;
+      float_sw4 birho=beta/a_rho[idx];
+
+      for (int c=0; c<3; c++) {
+        up(c,idx) -= birho * 
+          (// x-differences
+           a_strx[i+2] * a_coy[j] * a_coz[k] * (a_rho[idx+1] * a_dcx[i+3] * (shu[c][0][tj][ti+2] - 2 * shu[c][0][tj][ti+1] + shu[c][0][tj][ti  ]) -
+                                     2 * a_rho[idx] * a_dcx[i+2] * (shu[c][0][tj][ti+1] - 2 * shu[c][0][tj][ti  ] + shu[c][0][tj][ti-1]) +
+                                     a_rho[idx-1] * a_dcx[i+1] * (shu[c][0][tj][ti  ] - 2 * shu[c][0][tj][ti-1] + shu[c][0][tj][ti-2])) +
+           // y-differences
+           a_stry[j] * a_cox[i+2] * a_coz[k] * (a_rho[idx+ni] * a_dcy[j+1] * (shu[c][0][tj+2][ti] - 2 * shu[c][0][tj+1][ti] + shu[c][0][tj  ][ti]) -
+                                     2 * a_rho[idx] * a_dcy[j] * (shu[c][0][tj+1][ti] - 2 * shu[c][0][tj  ][ti] + shu[c][0][tj-1][ti]) +
+                                     a_rho[idx-ni] * a_dcy[j-1] * (shu[c][0][tj  ][ti] - 2 * shu[c][0][tj-1][ti] + shu[c][0][tj-2][ti])) +
+           // z-differences
+           a_strz[k] * a_cox[i+2] * a_coy[j] * (a_rho[idx+nij] * a_dcz[k+1] * (shu[c][2][tj][ti] - 2 * shu[c][1][tj][ti] + shu[c][0][tj][ti]) -
+                                     2 * a_rho[idx] * a_dcz[k] * (shu[c][1][tj][ti] - 2 * shu[c][0][tj][ti] + u_km1[c]         ) +
+                                     a_rho[idx-nij] * a_dcz[k-1] * (shu[c][0][tj][ti] - 2 * u_km1[c]          + u_km2[c])));
+        // Rotate the registers
+        u_km2[c] = u_km1[c];
+        u_km1[c] = shu[c][0][tj][ti];
+      }
+    } // End active
+
+  } // End K loop
+}
+
 
 // *************************************************************************************
 // Kernel launcher
@@ -12591,14 +12835,14 @@ void addsgd4_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, int 
   dim3 blocks = dim3((ni+BX-1)/BX, (njcomp+BY-1)/BY, 1);
   dim3 threads = dim3(BX, BY, 1);
   if (c_order)
-    addsgd4<true><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
+    addsgd4_SM<true><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
 						ni, nj, nk,
 						a_up, a_u, a_um, a_rho,
 						a_dcx,  a_dcy,  a_dcz,
 						a_strx, a_stry, a_strz,
 						a_cox,  a_coy,  a_coz, beta);
   else
-    addsgd4<false><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
+    addsgd4_SM<false><<<blocks,threads,0,stream>>> (ifirst, ilast, jfirst, jlast, kfirst, klast,
 						 ni, nj, nk,
 						 a_up, a_u, a_um, a_rho,
 						 a_dcx,  a_dcy,  a_dcz,
