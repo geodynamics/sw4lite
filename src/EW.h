@@ -88,7 +88,8 @@ class EW
    bool check_for_nan_GPU( vector<Sarray>& a_U, int verbose, string name );
    bool check_for_match_on_cpu_gpu( vector<Sarray>& a_U, int verbose, string name );
    void cycleSolutionArrays(vector<Sarray> & a_Um, vector<Sarray> & a_U,
-			    vector<Sarray> & a_Up ) ;
+			    vector<Sarray> & a_Up, Sarray*& dev_Um,
+			    Sarray*& dev_U, Sarray*& dev_Up );
    void Force(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSource*> point_sources, bool tt );
    void ForceCU( float_sw4 a_t, Sarray* dev_F, bool tt, int st );
    void evalRHS( vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
@@ -300,6 +301,35 @@ class EW
    void copy_point_sources_to_gpu();
    void init_point_sourcesCU();
 
+// Merged functions  for rhs4 and corrector, predictor
+   void RHSPredCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
+                                 vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                                 vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+   void RHSPredCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U, vector<Sarray> & a_Um,
+                         vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                         vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+   void RHSCorrCU_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                                 vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                                 vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+   void RHSCorrCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                         vector<Sarray>& a_Mu, vector<Sarray>& a_Lambda,
+                         vector<Sarray>& a_Rho, vector<Sarray>& a_F, int st);
+   void addSuperGridDampingCU_upper_boundary(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                                             vector<Sarray> & a_Um, vector<Sarray> & a_Rho, int st);
+   void addSuperGridDampingCU_center(vector<Sarray> & a_Up, vector<Sarray> & a_U,
+                                     vector<Sarray> & a_Um, vector<Sarray> & a_Rho, int st);
+   void extractRecordDataCU( int nt, int* mode, int* i0v, int* j0v, int* k0v,
+			     int* g0v, float_sw4** urec_dev, Sarray* dev_Um, Sarray* dev_U,
+			     float_sw4 dt, float_sw4* h_dev, Sarray* dev_metric,
+			     Sarray* dev_j, int st, int nvals, float_sw4* urec_hostmem,
+			     float_sw4* urec_devmem );
+
+   void allocateTimeSeriesOnDeviceCU( int& nvals, int& ntloc, int*& i0dev,
+				      int*& j0dev, int*& k0dev, int*& g0dev,
+				      int*& modedev, float_sw4**& urec_dev,
+				      float_sw4**& urec_host, float_sw4**& urec_hdev );
+
+ 
    // DG stuff
    int m_qu;
    int m_qv; 
@@ -453,14 +483,26 @@ class EW
    bool m_use_dg;
  
    // Halo data communication 
-   vector<float_sw4*> dev_SideEdge_Send_X, dev_SideEdge_Recv_X;
-   vector<float_sw4*> dev_SideEdge_Send_Y, dev_SideEdge_Recv_Y;
-   vector<float_sw4*>  m_SideEdge_Send_X, m_SideEdge_Recv_X;
-   vector<float_sw4*>  m_SideEdge_Send_Y, m_SideEdge_Recv_Y;
+   //vector<float_sw4*> dev_SideEdge_Send_X, dev_SideEdge_Recv_X;
+   //vector<float_sw4*> dev_SideEdge_Send_Y, dev_SideEdge_Recv_Y;
+   //vector<float_sw4*>  m_SideEdge_Send_X, m_SideEdge_Recv_X;
+   //vector<float_sw4*>  m_SideEdge_Send_Y, m_SideEdge_Recv_Y;
+
+   vector<float_sw4*> dev_SideEdge_Send, dev_SideEdge_Recv;
+   vector<float_sw4*>  m_SideEdge_Send, m_SideEdge_Recv;
+
    void setup_device_communication_array();
    void communicate_arrayCU( Sarray& u, int g , int st);
+   void communicate_arrayCU_X( Sarray& u, int g , int st);
+   void communicate_arrayCU_Y( Sarray& u, int g , int st);
 
 #ifdef SW4_CUDA
+   void pack_HaloArrayCU( Sarray& u, int g , int st);
+   void unpack_HaloArrayCU( Sarray& u, int g , int st);
+   void pack_HaloArrayCU_X( Sarray& u, int g , int st);
+   void unpack_HaloArrayCU_X( Sarray& u, int g , int st);
+   void pack_HaloArrayCU_Y( Sarray& u, int g , int st);
+   void unpack_HaloArrayCU_Y( Sarray& u, int g , int st);
    void CheckCudaCall(cudaError_t command, const char * commandName, const char * fileName, int line);
 #endif
    

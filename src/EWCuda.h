@@ -49,6 +49,7 @@ class EWCuda
    void reset_gpu();
    void initialize_gpu( int myrank );
    void sync_stream( int st );
+   void sync_device();
 };
 
 #define RADIUS 2

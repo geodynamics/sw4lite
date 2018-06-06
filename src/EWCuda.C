@@ -79,6 +79,18 @@ int mystrcmp(void const *a, void const *b) {
   return strcmp(aa, bb);
 }
 
+//-----------------------------------------------------------------------
+void EWCuda::sync_device( )
+{
+#ifdef SW4_CUDA
+   cudaError_t retcode;
+   retcode = cudaDeviceSynchronize();
+   if( retcode != cudaSuccess )
+      cout << "Error EWCuda::EWCuda, cudaDeviceSynchronize returned " <<
+	 cudaGetErrorString(retcode) << endl;
+#endif
+}
+
 extern "C"
 void setupgpu(int verbose)
 {

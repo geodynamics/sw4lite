@@ -58,6 +58,8 @@ TimeSeries( EW* a_ew, std::string fileName, std::string staName, receiverMode mo
 void allocateRecordingArrays( int numberOfTimeSteps, float_sw4 startTime, float_sw4 timeStep );
   
 void recordData(vector<float_sw4> & u );
+void recordData( float_sw4* u );
+int urec_size();
 
 void writeFile( string suffix="" );
 

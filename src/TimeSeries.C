@@ -386,7 +386,32 @@ void TimeSeries::recordData(vector<float_sw4> & u)
       writeFile();
 }
 
-   
+//--------------------------------------------------------------
+void TimeSeries::recordData(float_sw4* u ) 
+{
+// Same as recordData(vector<float_sw4>& u), but with pointer argument
+   if (!m_myPoint) return;
+   mLastTimeStep++;
+   if (mLastTimeStep < mAllocatedSize)
+   {
+      for (int q=0; q<m_nComp; q++)
+	 mRecordedSol[q][mLastTimeStep] = u[q];
+      if (m_sacFormat)
+      {
+	 for (int q=0; q<m_nComp; q++)
+	    mRecordedFloats[q][mLastTimeStep] = (float) u[q];
+      }
+   }
+   else
+   {
+      printf("Ran out of recording space for the receiver station at (i,j,k,grid) = (%i, %i, %i, %i)\n",
+	     m_i0, m_j0, m_k0, m_grid0);
+      return;
+   }
+   if (mWriteEvery > 0 && mLastTimeStep > 0 && mLastTimeStep % mWriteEvery == 0)
+      writeFile();
+}
+      
 //----------------------------------------------------------------------
 void TimeSeries::writeFile( string suffix )
 {
@@ -1052,4 +1077,20 @@ int TimeSeries::lastofmonth( int year, int month )
    else
       days = 31;
    return days;
+}
+
+//-----------------------------------------------------------------------
+int TimeSeries::urec_size()
+{
+   if( m_mode == Displacement || m_mode == Velocity || m_mode == Curl )
+      return 3;
+   else if( m_mode == Div )
+      return 1;
+   else if( m_mode == Strains )
+      return 6;
+   else if( m_mode == DisplacementGradient )
+      return 9;
+   else
+      cout << "TimeSeries::urec_size, m_mode = " << m_mode << " is not defined " << endl;
+   return -1;
 }

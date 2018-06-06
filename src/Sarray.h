@@ -45,6 +45,12 @@ using std::string;
 
 class EWCuda;
 
+#ifdef SW4_CUDA
+#define SW4_HDDECLARE __host__ __device__
+#else
+#define SW4_HDDECLARE 
+#endif
+
 class Sarray
 {
 public:
@@ -66,11 +72,7 @@ public:
 		int kend );
    void define( const Sarray& u );
    inline float_sw4* c_ptr() {return m_data;}
-#ifdef SW4_CUDA
-   __host__ __device__ inline float_sw4* dev_ptr() {return dev_data;}
-#else
-   inline float_sw4* dev_ptr() {return dev_data;}
-#endif
+   SW4_HDDECLARE inline float_sw4* dev_ptr() {return dev_data;}
    void reference( float_sw4* new_data ){m_data = new_data; }
    void reference_dev( float_sw4* new_data ){dev_data = new_data; }
 
@@ -89,7 +91,7 @@ public:
 //      return m_data[c-1+m_nc*(i-m_ib)+m_nc*m_ni*(j-m_jb)+m_nc*m_ni*m_nj*(k-m_kb)];}
       return m_data[m_base+m_offc*c+m_offi*i+m_offj*j+m_offk*k];}
 
-   inline float_sw4& operator()( int c, int i, int j, int k, bool dev_ponter)
+   SW4_HDDECLARE inline float_sw4& operator()( int c, int i, int j, int k, bool dev_ponter)
    {
 #ifdef BZ_DEBUG
       VERIFY2( in_range(c,i,j,k), "Error Index (c,i,j,k) = (" << c << "," << i << "," << j << "," << k
@@ -115,6 +117,22 @@ public:
 #endif
 //      return m_data[m_nc*(i-m_ib)+m_nc*m_ni*(j-m_jb)+m_nc*m_ni*m_nj*(k-m_kb)];}
       return m_data[m_base+m_offi*i+m_offj*j+m_offk*k+m_offc];}
+   SW4_HDDECLARE inline float_sw4& operator()( int i, int j, int k, bool dev_pointer )
+      {
+#ifdef BZ_DEBUG
+         if (!in_range(1,i,j,k))
+            VERIFY2(0, 
+                    "Error Index (c,i,j,k) = (" << 1 << "," << i << "," << j << "," << k
+                    << ") not in range 1<= c <= "
+                    << m_nc << " "
+                    << m_ib << " <= i <= " << m_ie << " "
+                    << m_jb << " <= j <= " << m_je << " "
+                    << m_kb << " <= k <= " << m_ke );
+            
+#endif
+//      return m_data[m_nc*(i-m_ib)+m_nc*m_ni*(j-m_jb)+m_nc*m_ni*m_nj*(k-m_kb)];}
+      return dev_data[m_base+m_offi*i+m_offj*j+m_offk*k+m_offc];}
+
    inline bool is_defined()
       {return m_data != NULL;}
    int m_ib, m_ie, m_jb, m_je, m_kb, m_ke;
@@ -123,11 +141,7 @@ public:
    size_t m_offi, m_offj, m_offk, m_offc, m_npts;
 //   int index( int i, int j, int k ) {return (i-m_ib)+m_ni*(j-m_jb)+m_ni*m_nj*(k-m_kb);}
    size_t index( int i, int j, int k ) {return m_base+m_offc+m_offi*i+m_offj*j+m_offk*k;}
-#ifdef SW4_CUDA
-   __host__ __device__ size_t index( int c, int i, int j, int k ) {return m_base+m_offc*c+m_offi*i+m_offj*j+m_offk*k;}
-#else
-   size_t index( int c, int i, int j, int k ) {return m_base+m_offc*c+m_offi*i+m_offj*j+m_offk*k;}
-#endif
+   SW4_HDDECLARE size_t index( int c, int i, int j, int k ) {return m_base+m_offc*c+m_offi*i+m_offj*j+m_offk*k;}
    void intersection( int ib, int ie, int jb, int je, int kb, int ke, int wind[6] );
    void side_plane( int side, int wind[6], int nGhost=1 );
    void side_plane_fortran( int side, int wind[6], int nGhost=1 );
