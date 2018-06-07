@@ -496,13 +496,13 @@ class EW
    void communicate_arrayCU_X( Sarray& u, int g , int st);
    void communicate_arrayCU_Y( Sarray& u, int g , int st);
 
-#ifdef SW4_CUDA
    void pack_HaloArrayCU( Sarray& u, int g , int st);
    void unpack_HaloArrayCU( Sarray& u, int g , int st);
    void pack_HaloArrayCU_X( Sarray& u, int g , int st);
    void unpack_HaloArrayCU_X( Sarray& u, int g , int st);
    void pack_HaloArrayCU_Y( Sarray& u, int g , int st);
    void unpack_HaloArrayCU_Y( Sarray& u, int g , int st);
+#ifdef SW4_CUDA
    void CheckCudaCall(cudaError_t command, const char * commandName, const char * fileName, int line);
 #endif
    
