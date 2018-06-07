@@ -2606,7 +2606,9 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
            communicate_arrayCU_Y( Up[g], g, 0);
            unpack_HaloArrayCU_Y (Up[g], g, 0);
 	 } 
-         cudaDeviceSynchronize();
+#ifdef SW4_CUDA
+	 cudaDeviceSynchronize();
+#endif
       }
       else
       {
@@ -2642,7 +2644,9 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if( m_cuobj->has_gpu() )
       {
 	 ForceCU( t, dev_F, true, 0 );
-         cudaDeviceSynchronize();
+#ifdef SW4_CUDA
+	 cudaDeviceSynchronize();
+#endif
       }
       else
 	 Force( t, F, m_point_sources, true );
