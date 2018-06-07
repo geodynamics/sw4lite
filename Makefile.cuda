@@ -13,7 +13,7 @@ else ifeq ($(findstring surface,$(HOSTNAME)),surface)
    HOSTCOMP = /usr/local/tools/ic-16.0.258/bin/icpc
    MPIPATH  = /usr/local/tools/mvapich2-intel-2.2
    gpuarch := sm_35
-   EXTRA_LINK_FLAGS = -lmpich -lmpl -lpmi
+   EXTRA_LINK_FLAGS = -lmpich -lmpl -lpmi -llapack
    MPIINC = $(MPIPATH)/include
    debugdir := debug_cuda_surface
    optdir   := optimize_cuda_surface
@@ -22,10 +22,10 @@ else
    HOSTCOMP = gcc
    MPIPATH = $(dir $(shell which mpicc))../
    gpuarch := sm_60
-   EXTRA_LINK_FLAGS = -lmpi
+   EXTRA_LINK_FLAGS = -lmpi -llapack
    MPIINC = $(MPIPATH)/include
-   debugdir := debug_cuda_surface
-   optdir   := optimize_cuda_surface
+   debugdir := debug_cuda
+   optdir   := optimize_cuda
 endif
 CXX  = $(NVCC)
 MPILIB = $(MPIPATH)/lib
