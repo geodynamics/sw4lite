@@ -2759,10 +2759,6 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if( m_checkfornan )
 	 check_for_nan( Up, 1, "Up" );
 
-      if( m_cuobj->has_gpu() )
-         for( int g=0; g < mNumberOfGrids ; g++ )
-	    Up[g].copy_from_device(m_cuobj,true,0);
-
 // increment time
       t += mDt;
 
@@ -2884,6 +2880,11 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
    print_execution_time( time_start_solve, time_end_solve, "solver phase" );
    if( m_output_detailed_timing )
       print_execution_times( time_sum );
+
+    if( m_cuobj->has_gpu() )
+       for( int g=0; g < mNumberOfGrids ; g++ )
+	  U[g].copy_from_device(m_cuobj,true,0);
+
 
    if ( m_point_source_test )
    {
