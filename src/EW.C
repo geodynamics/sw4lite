@@ -2759,9 +2759,9 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
       if( m_checkfornan )
 	 check_for_nan( Up, 1, "Up" );
 
-//      if( m_cuobj->has_gpu() )
-//         for( int g=0; g < mNumberOfGrids ; g++ )
-//	    Up[g].copy_from_device(m_cuobj,true,0);
+      if( m_cuobj->has_gpu() )
+         for( int g=0; g < mNumberOfGrids ; g++ )
+	    Up[g].copy_from_device(m_cuobj,true,0);
 
 // increment time
       t += mDt;
