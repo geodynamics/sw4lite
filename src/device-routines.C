@@ -10574,7 +10574,7 @@ void rhs4_pred_gpu (int ifirst, int ilast, int jfirst, int jlast, int kfirst, in
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, a_strz, h, dt);
   else
-    rhs4_v2<0,0><<<blocks,threads,0,stream>>>
+    rhs4_v2<0,1><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast, kfirst, klast,
        ni, nj, nk,
        a_up, a_u, a_um,
@@ -12311,14 +12311,14 @@ void rhs4_highk_corr_gpu (int ifirst, int ilast, int jfirst, int jlast,
   dim3 blocks = dim3((ni+UX-1)/UX, (nj+1)/2, 1);
   dim3 threads = dim3(UX, 2, 6);
   if (c_order)
-    rhs4_Kboundary<1,0,1><<<blocks,threads,0,stream>>>
+    rhs4_Kboundary<1,0,0><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
        ni, nj, nk, nz,
        a_up, a_u, NULL,
        a_mu, a_lambda, a_rho, a_fo,
        a_strx, a_stry, h, dt);
   else
-    rhs4_Kboundary<0,0,1><<<blocks,threads,0,stream>>>
+    rhs4_Kboundary<0,0,0><<<blocks,threads,0,stream>>>
       (ifirst, ilast, jfirst, jlast,
        ni, nj, nk, nz,
        a_up, a_u, NULL,
