@@ -32,7 +32,7 @@ MPILIB = $(MPIPATH)/lib
 
 ifeq ($(debug),yes)
    FFLAGS    = -g 
-   CXXFLAGS  = -g -x cu -I../src -c -dc -arch=$(gpuarch) -DBZ_DEBUG -DSW4_CROUTINES -DSW4_CUDA -ccbin $(HOSTCOMP)
+   CXXFLAGS  = -g -x cu -I../src -c -dc -arch=$(gpuarch) -DSW4_CROUTINES -DSW4_CUDA -ccbin $(HOSTCOMP)
    CFLAGS    = -g 
 else
    FFLAGS   = -O3 
