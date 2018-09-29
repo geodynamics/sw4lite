@@ -38,6 +38,14 @@ and the executable will be under `optimize_cuda_hostname/sw4lite`.
 
 More options are described in the Makefile.
 
+Experimental cmake build is available for cuda build:
+```bash
+mkdir build;
+cd build;
+cmake ..; # optionally add -DCMAKE_PREFIX_PATH=$PWD/../../lapack_build/ if lapack is not found by default.
+make;
+```
+
 To run
 ------
 

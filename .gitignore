@@ -13,9 +13,13 @@ build/
 
 optimize/
 
+/optimize_cuda/
+
 optimize_cuda_surface/
 
 debug/
+
+/debug_cuda/
 
 debug_cuda_surface/
 
