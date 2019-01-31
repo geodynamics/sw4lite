@@ -12,13 +12,22 @@ using namespace RAJA;
 
 // Note 4,4,32 runs out of registers
 #ifdef CUDA_CODE
-typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<4>,cuda_threadblock_y_exec<4>,
-			      cuda_threadblock_z_exec<16>>>
-  EXEC;
+// typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<4>,cuda_threadblock_y_exec<4>,
+// 			      cuda_threadblock_z_exec<16>>>
+//   EXEC;
 
-typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<16>,cuda_threadblock_y_exec<4>,
-			      cuda_threadblock_z_exec<16>>>
-  EXEC_LARGE;
+using EXEC= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernel<
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_x_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<16>, RAJA::cuda_block_z_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+														RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
+// typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<16>,cuda_threadblock_y_exec<4>,
+// 			      cuda_threadblock_z_exec<16>>>
+//   EXEC_LARGE;
 #define SYNC_DEVICE cudaDeviceSynchronize();
 #else
 typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
@@ -108,12 +117,18 @@ void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, i
       kstart = 7;
       // Used 255 registers, 508 bytes cmem[0], 48 bytes cmem[2] About 2KB of spill loads and stores: 2.8 s on 4 proc case
       PUSH_RANGE("rhs4sgcurv_rev::1",4);
-	      forallN<EXEC, int, int,int>(
-				    RangeSegment(1,7),
-				    RangeSegment(jfirst+2,jlast-1),
-				    RangeSegment(ifirst+2,ilast-1),
-				    [=] RAJA_DEVICE(int k, int j, int i) 
-	    {
+      RAJA::RangeSegment k_range(1,6+1);
+     RAJA::RangeSegment j_range(jfirst+2,jlast-1);
+     RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+     RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	    //   forallN<EXEC, int, int,int>(
+	    // 			    RangeSegment(1,7),
+	    // 			    RangeSegment(jfirst+2,jlast-1),
+	    // 			    RangeSegment(ifirst+2,ilast-1),
+	    // 			    [=] RAJA_DEVICE(int k, int j, int i) 
+	    // {
 // 5 ops                  
                float_sw4 ijac   = strx(i)*stry(j)/jac(i,j,k);
                float_sw4 istry  = 1/(stry(j));
@@ -599,12 +614,18 @@ void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, i
    } // if onesided...
    //Uses 216 registers, 532 bytes cmem[0], 48 bytes cmem[2] 5.8 on 4 procs
    PUSH_RANGE("rhs4sgcurv_rev::2",5);
-	   forallN<EXEC, int, int,int>(
-			    RangeSegment(kstart,klast-1),
-			    RangeSegment(jfirst+2,jlast-1),
-			    RangeSegment(ifirst+2,ilast-1),
-			    [=] RAJA_DEVICE(int k, int j, int i) 
-	 {
+   RAJA::RangeSegment k_range(kstart,klast-1);
+	RAJA::RangeSegment j_range(jfirst+2,jlast-1);
+	RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+     RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	 //   forallN<EXEC, int, int,int>(
+	 // 		    RangeSegment(kstart,klast-1),
+	 // 		    RangeSegment(jfirst+2,jlast-1),
+	 // 		    RangeSegment(ifirst+2,ilast-1),
+	 // 		    [=] RAJA_DEVICE(int k, int j, int i) 
+	 // {
 // 5 ops
 	    float_sw4 ijac = strx(i)*stry(j)/jac(i,j,k);
             float_sw4 istry = 1.0/(stry(j));

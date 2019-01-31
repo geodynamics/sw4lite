@@ -43,12 +43,12 @@ else ifeq ($(findstring quartz,$(HOSTNAME)),quartz)
   openmp = yes
   LINKER = mpicxx
   computername := quartz
-else ifeq ($(findstring ray,$(HOSTNAME)),ray)
+else ifeq ($(findstring lassen,$(HOSTNAME)),lassen)
    FC  = mpif90
    CXX = nvcc
-   RAJA_LOCATION = 
-   CUDA_LIBS = /usr/tce/packages/cuda/cuda-9.0.176/lib64
-   OPT = -O3 -ccbin mpicxx -Xcompiler="" -std=c++11 --expt-extended-lambda -restrict -arch=sm_60 -I$(RAJA_LOCATION)/include  --x cu -DUSE_NVTX -DRAJA_USE_CUDA -DSW4_CROUTINES -DRAJA_USE_RESTRICT_PTR -DCUDA_CODE -DRAJA_ENABLE_NESTED
+   RAJA_LOCATION = /usr/workspace/wsb/ramesh/RAJA/2019/RAJA-0.7.0/install_sierra
+   CUDA_LIBS = $(CUDA_HOME)/lib64
+   OPT = -O3 -ccbin mpicxx -Xcompiler="" -std=c++11 --expt-extended-lambda -restrict -arch=sm_70 -DRAJA03=1 -I$(RAJA_LOCATION)/include  --x cu -DUSE_NVTX -DRAJA_USE_CUDA -DSW4_CROUTINES -DRAJA_USE_RESTRICT_PTR -DCUDA_CODE -DRAJA_ENABLE_NESTED
 # Gnu blas/lapack libraries:
 #   EXTRA_LINK_FLAGS = -lmpi_ibm -L/usr/tcetmp/packages/lapack/lapack-3.6.0-gfortran-4.8.5/lib -llapack -L/usr/tcetmp/packages/blas/blas-3.6.0-gfortran-4.8.5/lib -lblas -lgfortran -lcudart -L$(CUDA_LIBS) -lnvToolsExt 
 # xlf blas/lapack libraries:

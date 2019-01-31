@@ -12,9 +12,19 @@ using namespace RAJA;
 // Note 4,4,32 runs out of registers
 // 1 1 64 is almost twice as fast as 4 4 16 on the standalon kernel ( 6 ms for a 4 MPI rank piece )
 #ifdef CUDA_CODE
-typedef NestedPolicy<ExecList<cuda_threadblock_z_exec<1>,cuda_threadblock_y_exec<1>,
-			      cuda_threadblock_x_exec<64>>>
-  EXEC;
+// typedef NestedPolicy<ExecList<cuda_threadblock_z_exec<1>,cuda_threadblock_y_exec<1>,
+// 			      cuda_threadblock_x_exec<64>>>
+//   EXEC;
+
+using EXEC= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernel<
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_x_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<64>, RAJA::cuda_block_z_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+														RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
 
 #define SYNC_DEVICE cudaDeviceSynchronize();
 #else
@@ -121,11 +131,17 @@ void rhs4sg_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int k
      PUSH_RANGE("RHS4SG_REV:1",2);
      //#pragma ivdep
      //#pragma forceinline recursive
-     forallN<EXEC, int, int,int>(
-				 RangeSegment(k1,k2+1),
-				 RangeSegment(jfirst+2,jlast-1),
-				 RangeSegment(ifirst+2,ilast-1),
-				 [=] RAJA_DEVICE(int k, int j, int i) {
+RAJA::RangeSegment k_range(k1,k2+1);
+     RAJA::RangeSegment j_range(jfirst+2,jlast-1);
+     RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+     RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+     // forallN<EXEC, int, int,int>(
+     // 				 RangeSegment(k1,k2+1),
+     // 				 RangeSegment(jfirst+2,jlast-1),
+     // 				 RangeSegment(ifirst+2,ilast-1),
+     // 				 [=] RAJA_DEVICE(int k, int j, int i) {
 	
 				   float_sw4 mux1, mux2, mux3, mux4, muy1, muy2, muy3, muy4, muz1, muz2, muz3, muz4;
 	   float_sw4 r1, r2, r3;
@@ -376,11 +392,17 @@ __assume_aligned(a_strz,ASSUME_ALIGNED);
       {
 	//std::cout<<"LOOP SET # 2\n";
 	PUSH_RANGE("RHS4SG_REV:2",3);
-	forallN<EXEC, int, int,int>(
-				    RangeSegment(1,6+1),
-				    RangeSegment(jfirst+2,jlast-1),
-				    RangeSegment(ifirst+2,ilast-1),
-				    [=] RAJA_DEVICE(int k, int j, int i) {
+RAJA::RangeSegment k_range(1,6+1);
+	RAJA::RangeSegment j_range(jfirst+2,jlast-1);
+	RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+     RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	// forallN<EXEC, int, int,int>(
+	// 			    RangeSegment(1,6+1),
+	// 			    RangeSegment(jfirst+2,jlast-1),
+	// 			    RangeSegment(ifirst+2,ilast-1),
+	// 			    [=] RAJA_DEVICE(int k, int j, int i) {
 float_sw4 mux1, mux2, mux3, mux4,r1,r2,r3,muy1,muy2,muy3,muy4;
 /* from inner_loop_4a */
 		  mux1 = mu(i-1,j,k)*strx(i-1)-
@@ -635,12 +657,18 @@ float_sw4 mux1, mux2, mux3, mux4,r1,r2,r3,muy1,muy2,muy3,muy4;
       {
 	std::cout<<"Loop set #3 \n";
 	PUSH_RANGE("RHS4SG_REV:3",3);
-	forallN<EXEC, int, int,int>(
-				    RangeSegment(nk-5,nk+1),
-				    RangeSegment(jfirst+2,jlast-1),
-				    RangeSegment(ifirst+2,ilast-1),
-				    [=] RAJA_DEVICE(int k, int j, int i)
-	       {
+RAJA::RangeSegment k_range(nk-5,nk+1);
+     RAJA::RangeSegment j_range(jfirst+2,jlast-1);
+     RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+     RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	// forallN<EXEC, int, int,int>(
+	// 			    RangeSegment(nk-5,nk+1),
+	// 			    RangeSegment(jfirst+2,jlast-1),
+	// 			    RangeSegment(ifirst+2,ilast-1),
+	// 			    [=] RAJA_DEVICE(int k, int j, int i)
+	//        {
 		 float_sw4 mux1, mux2, mux3, mux4,r1,r2,r3,muy1,muy2,muy3,muy4;
 		  /* from inner_loop_4a */
 		  mux1 = mu(i-1,j,k)*strx(i-1)-

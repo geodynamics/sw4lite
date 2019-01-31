@@ -3150,7 +3150,7 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
   float_sw4 **ForceAddress_copy=ForceAddress;
   PREFETCH(ForceVector);
   PREFETCH(ForceAddress);
-  forall<EXEC > (0,m_identsources.size()-1,[=] RAJA_DEVICE(int r)
+  RAJA::forall<EXEC > (RAJA::RangeSegment(0,m_identsources.size()-1),[=] RAJA_DEVICE(int r)
     {
       int index=r*3;
       //float_sw4* fptr =a_F[g].c_ptr();
@@ -3681,7 +3681,7 @@ void EW::cartesian_bc_forcing( float_sw4 t, vector<float_sw4**> & a_BCForcing,
 	    if( m_bcType[g][side] == bDirichlet )
 	       get_exact_point_source2( a_BCForcing[g][side], t, g, *a_sources[0], &m_BndryWindow[g][6*side] );
 	    else
-	      forall<EXEC> (0,3*m_NumberOfBCPoints[g][side],[=] RAJA_DEVICE(int q){
+	      RAJA::forall<EXEC> (RAJA::RangeSegment(0,3*m_NumberOfBCPoints[g][side]),[=] RAJA_DEVICE(int q){
 		  tmp[q] = 0;});
 	}
       }
@@ -3691,7 +3691,7 @@ void EW::cartesian_bc_forcing( float_sw4 t, vector<float_sw4**> & a_BCForcing,
 	 // we can do the same loop for all types of bc. For bParallel boundaries, numberOfBCPoints=0
 	for( int side=0 ; side < 6 ; side++ ){
 	  float_sw4 *tmp=a_BCForcing[g][side];
-	  forall<EXEC> (0,3*m_NumberOfBCPoints[g][side],[=] RAJA_DEVICE(int q){
+	  RAJA::forall<EXEC> (RAJA::RangeSegment(0,3*m_NumberOfBCPoints[g][side]),[=] RAJA_DEVICE(int q){
 		  tmp[q] = 0;});
 	}
       }
@@ -4370,11 +4370,21 @@ void EW::get_exact_point_source( float_sw4* up, float_sw4 t, int g, Source& sour
    //	 for( int i=imin ; i <= imax ; i++ )
    int m_zmin_local= m_zmin[g];
    //PrintPointerAttributes(up);
-   forallN<EXEC_CARTBC, int, int,int>(
-				  RangeSegment(kmin,kmax+1),
-				  RangeSegment(jmin,jmax+1),
-				  RangeSegment(imin,imax+1),
-				  [=] RAJA_DEVICE(int k, int j, int i) {
+
+   RAJA::RangeSegment k_range(kmin,kmax+1);
+   RAJA::RangeSegment j_range(jmin,jmax+1);
+   RAJA::RangeSegment i_range(imin,imax+1);
+   RAJA::kernel<EXEC_CARTBC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+
+
+
+   // forallN<EXEC_CARTBC, int, int,int>(
+   // 				  RangeSegment(kmin,kmax+1),
+   // 				  RangeSegment(jmin,jmax+1),
+   // 				  RangeSegment(imin,imax+1),
+   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 	 
             float_sw4 x,y,z;
 	    size_t ind = (i-imin)+(j-jmin)*(imax-imin+1)+(k-kmin)*(jmax-jmin+1)*(imax-imin+1);
@@ -7122,7 +7132,7 @@ void EW::getbuffer_device(float_sw4 *data, float_sw4* buf, std::tuple<int,int,in
   //std::cout<<"getbuffer_device...";
   PUSH_RANGE_PAYLOAD("GET_BUFFER",1,count*bl);
   //PREFETCHFORCED(buf);
-  forall<EXEC > (0,count,[=] RAJA_DEVICE(int i){
+  forall<EXEC > (RAJA::RangeSegment(0,count),[=] RAJA_DEVICE(int i){
     for (int k=0;k<bl;k++) buf[k+i*bl]=data[i*stride+k];
   });
 
@@ -7158,7 +7168,7 @@ void EW::putbuffer_device(float_sw4 *data, float_sw4* buf, std::tuple<int,int,in
   //std::cout<<"putbuffer_device...";
   PUSH_RANGE_PAYLOAD("PUT_BUFFER",2,count*bl);
   //PREFETCHFORCED(buf);
-  forall<EXEC > (0,count,[=] RAJA_DEVICE(int i){
+  RAJA::forall<EXEC > (RAJA::RangeSegment(0,count),[=] RAJA_DEVICE(int i){
       for (int k=0;k<bl;k++) data[i*stride+k]=buf[k+i*bl];
     });
 
@@ -7260,11 +7270,19 @@ void EW::get_exact_point_source2( float_sw4* up, float_sw4 t, int g, Source& sou
    //PrintPointerAttributes(up);
    if( !ismomentsource )
      {
-   forallN<EXEC_CARTBC, int, int,int>(
-				  RangeSegment(kmin,kmax+1),
-				  RangeSegment(jmin,jmax+1),
-				  RangeSegment(imin,imax+1),
-				  [=] RAJA_DEVICE(int k, int j, int i) {
+
+RAJA::RangeSegment k_range(kmin,kmax+1);
+   RAJA::RangeSegment j_range(jmin,jmax+1);
+   RAJA::RangeSegment i_range(imin,imax+1);
+   RAJA::kernel<EXEC_CARTBC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+
+   // forallN<EXEC_CARTBC, int, int,int>(
+   // 				  RangeSegment(kmin,kmax+1),
+   // 				  RangeSegment(jmin,jmax+1),
+   // 				  RangeSegment(imin,imax+1),
+   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 	 
             float_sw4 x,y,z;
 	    size_t ind = (i-imin)+(j-jmin)*(imax-imin+1)+(k-kmin)*(jmax-jmin+1)*(imax-imin+1);
@@ -7326,11 +7344,20 @@ void EW::get_exact_point_source2( float_sw4* up, float_sw4 t, int g, Source& sou
 				  });}
 	    else 
 	      {
-		forallN<EXEC_CARTBC, int, int,int>(
-						   RangeSegment(kmin,kmax+1),
-						   RangeSegment(jmin,jmax+1),
-						   RangeSegment(imin,imax+1),
-						   [=] RAJA_DEVICE(int k, int j, int i) {
+
+
+RAJA::RangeSegment k_range(kmin,kmax+1);
+   RAJA::RangeSegment j_range(jmin,jmax+1);
+   RAJA::RangeSegment i_range(imin,imax+1);
+   RAJA::kernel<EXEC_CARTBC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+
+		// forallN<EXEC_CARTBC, int, int,int>(
+		// 				   RangeSegment(kmin,kmax+1),
+		// 				   RangeSegment(jmin,jmax+1),
+		// 				   RangeSegment(imin,imax+1),
+		// 				   [=] RAJA_DEVICE(int k, int j, int i) {
 						     size_t ind = (i-imin)+(j-jmin)*(imax-imin+1)+(k-kmin)*(jmax-jmin+1)*(imax-imin+1);
 						     up[3*ind] = up[3*ind+1] = up[3*ind+2] = 0;
 						     // Here, ismomentsource == true

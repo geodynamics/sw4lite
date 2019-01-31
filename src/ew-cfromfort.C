@@ -13,24 +13,71 @@
 using namespace RAJA;
 #include "mynvtx.h"
 #ifdef CUDA_CODE
-typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<4>,cuda_threadblock_y_exec<4>,
-			      cuda_threadblock_z_exec<32>>>
-  EXEC;
-typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<16>,cuda_threadblock_y_exec<16>,
-			      cuda_threadblock_z_exec<16>>>
-  EXEC_BC;
+// typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<4>,cuda_threadblock_y_exec<4>,
+// 			      cuda_threadblock_z_exec<32>>>
+//   EXEC;
+// typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<16>,cuda_threadblock_y_exec<16>,
+// 			      cuda_threadblock_z_exec<16>>>
+//   EXEC_BC;
 
-typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<32>,cuda_threadblock_y_exec<32>>>
-  EXEC_BC2;
-
-
-typedef NestedPolicy<ExecList<seq_exec, seq_exec, seq_exec>>
-  CEXEC_BC;
-
+// typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<32>,cuda_threadblock_y_exec<32>>>
+//   EXEC_BC2;
 typedef RAJA::cuda_exec<1024,true> FEXEC;
-typedef NestedPolicy<ExecList<cuda_threadblock_z_exec<1>,cuda_threadblock_y_exec<1>,
-			      cuda_threadblock_x_exec<1024>,seq_exec>,Permute<PERM_LIJK,Execute>>
-  EXEC_FORT_PERM;
+
+using EXEC= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernel<
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_x_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_z_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+														RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
+
+using EXEC_BC= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernel<
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_x_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_z_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+														RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
+
+using EXEC_BC2= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernel<
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_x_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_y_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+																     RAJA::statement::Lambda<0> >>>>>>;
+using CEXEC_BC = RAJA::KernelPolicy<
+  RAJA::statement::CudaKernel<
+    RAJA::statement::For<0, RAJA::seq_exec,
+			 RAJA::statement::For<1, RAJA::seq_exec,
+					      RAJA::statement::For<2, RAJA::seq_exec,
+								   RAJA::statement::Lambda<0> >>>>>;
+  
+// typedef NestedPolicy<ExecList<seq_exec, seq_exec, seq_exec>>
+//   CEXEC_BC;
+
+
+
+// typedef NestedPolicy<ExecList<cuda_threadblock_z_exec<1>,cuda_threadblock_y_exec<1>,
+// 			      cuda_threadblock_x_exec<1024>,seq_exec>,Permute<PERM_LIJK,Execute>>
+//   EXEC_FORT_PERM;
+
+// PERM TURNED OFF FOR NOW 
+using EXEC_FORT_PERM = RAJA::KernelPolicy<
+    RAJA::statement::CudaKernel<
+      RAJA::statement::Tile<0, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_z_loop,
+        RAJA::statement::Tile<1, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_y_loop,
+			      RAJA::statement::Tile<2, RAJA::statement::tile_fixed<1024>, RAJA::cuda_block_x_loop,
+          RAJA::statement::For<0, RAJA::cuda_thread_y_direct,
+            RAJA::statement::For<1, RAJA::cuda_thread_x_direct,
+				 RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+						      RAJA::statement::For<3, RAJA::seq_exec,
+									   RAJA::statement::Lambda<0> >>>>>>>>>;
 
 #define SYNC_DEVICE cudaDeviceSynchronize();
 #else
@@ -87,7 +134,7 @@ void EW::corrfort( int ib, int ie, int jb, int je, int kb, int ke, float_sw4* up
    if( m_corder )
    {
      //for( size_t i=0 ; i < npts ; i++ )
-     forall< FEXEC> (0,npts,[=] RAJA_DEVICE(size_t i)
+     RAJA::forall< FEXEC> (RAJA::RangeSegment(0,npts),[=] RAJA_DEVICE(size_t i)
       {
 	 float_sw4 dt4i12orh = dt4i12/rho[i];
 	 up[i  ]      += dt4i12orh*(lu[i  ]     +fo[i  ]);
@@ -99,7 +146,7 @@ void EW::corrfort( int ib, int ie, int jb, int je, int kb, int ke, float_sw4* up
    else
    {
      //for( size_t i=0 ; i < npts ; i++ )
-     forall< FEXEC> (0,npts,[=] RAJA_DEVICE(size_t i)
+     RAJA::forall< FEXEC> (RAJA::RangeSegment(0,npts),[=] RAJA_DEVICE(size_t i)
       {
 	 float_sw4 dt4i12orh = dt4i12/rho[i];
 	 up[3*i  ] += dt4i12orh*(lu[3*i  ]+fo[3*i  ]);
@@ -145,7 +192,7 @@ void EW::predfort( int ib, int ie, int jb, int je, int kb, int ke, float_sw4* up
    {
       // Like this ?
      //for( size_t i=0 ; i < npts ; i++ )
-     forall< FEXEC> (0,npts,[=] RAJA_DEVICE(size_t i)
+     RAJA::forall< FEXEC> (RAJA::RangeSegment(0,npts),[=] RAJA_DEVICE(size_t i)
       {
 	 float_sw4 dt2orh = dt2/rho[i];
 	 up[i  ]      = 2*u[i  ]     -um[i  ]      + dt2orh*(lu[i  ]     +fo[i  ]);
@@ -172,7 +219,7 @@ void EW::predfort( int ib, int ie, int jb, int je, int kb, int ke, float_sw4* up
    else
    {
      //for( size_t i=0 ; i < npts ; i++ )
-forall<FEXEC > (0,npts,[=] RAJA_DEVICE(size_t i)
+     RAJA::forall<FEXEC > (RAJA::RangeSegment(0,npts),[=] RAJA_DEVICE(size_t i)
       {
 	 float_sw4 dt2orh = dt2/rho[i];
 	 up[3*i  ] = 2*u[3*i  ]-um[3*i  ] + dt2orh*(lu[3*i  ]+fo[3*i  ]);
@@ -209,7 +256,7 @@ void EW::dpdmtfort( int ib, int ie, int jb, int je, int kb, int ke, const float_
    // Code is slower with this RAJA loop due to the cost of copying data. Prefecth version is the fastest:: 2.70s on 20 procs. Without this loop it is around 2.4s
    // To fix. either port more loops to device or wait for the UM copies to reach 30GB/s
    PUSH_RANGE("dpdmtfort",2);
-   forall< FEXEC> (0,3*npts,[=] RAJA_DEVICE(size_t i){
+   RAJA::forall< FEXEC> (RAJA::RangeSegment(0,3*npts),[=] RAJA_DEVICE(size_t i){
        //   for( size_t i = 0 ; i < 3*npts ; i++ )
       u2[i] = dt2i*(up[i]-2*u[i]+um[i]);
      });
@@ -335,11 +382,17 @@ void EW::bcfortsg( int ib, int ie, int jb, int je, int kb, int ke, int wind[36],
 	   int ks = wind[4+6*s];
 	   int ke = wind[5+6*s];
 	   //PrintPointerAttributes((void*)bforce1);
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+	   RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					 size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					 int qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					 u[3*ind  ] = bforce1[  3*qq];
@@ -357,11 +410,17 @@ void EW::bcfortsg( int ib, int ie, int jb, int je, int kb, int ke, int wind[36],
 	   int ks = wind[4+6*s];
 	   int ke = wind[5+6*s];
 	   //PrintPointerAttributes((void*)bforce1);
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    int qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[3*ind  ] = bforce2[  3*qq];
@@ -379,11 +438,17 @@ void EW::bcfortsg( int ib, int ie, int jb, int je, int kb, int ke, int wind[36],
 	   int ks = wind[4+6*s];
 	   int ke = wind[5+6*s];
 	   //PrintPointerAttributes((void*)bforce1);
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    int qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[3*ind  ] = bforce3[  3*qq];
@@ -401,11 +466,17 @@ void EW::bcfortsg( int ib, int ie, int jb, int je, int kb, int ke, int wind[36],
 	   int ks = wind[4+6*s];
 	   int ke = wind[5+6*s];
 	   //PrintPointerAttributes((void*)bforce1);
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    int qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[3*ind  ] = bforce4[  3*qq];
@@ -422,12 +493,18 @@ void EW::bcfortsg( int ib, int ie, int jb, int je, int kb, int ke, int wind[36],
 	   int je = wind[3+6*s];
 	   int ks = wind[4+6*s];
 	   int ke = wind[5+6*s];
-	   //PrintPointerAttributes((void*)bforce1);
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+	   //PrintPointerAttributes((void*)bforce1);'
+RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    int qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[3*ind  ] = bforce5[  3*qq];
@@ -446,11 +523,17 @@ void EW::bcfortsg( int ib, int ie, int jb, int je, int kb, int ke, int wind[36],
 	   int ks = wind[4+6*s];
 	   int ke = wind[5+6*s];
 	   //PrintPointerAttributes((void*)bforce1);
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    int qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[3*ind  ] = bforce6[  3*qq];
@@ -644,11 +727,17 @@ void EW::bcfortsg_indrev( int ib, int ie, int jb, int je, int kb, int ke, int wi
 	 if( s== 0 )
 	 {
 	   PUSH_RANGE("LOOP-0",0);
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+	   RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    size_t qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[ind  ]      = bforce1[  3*qq];
@@ -660,11 +749,17 @@ void EW::bcfortsg_indrev( int ib, int ie, int jb, int je, int kb, int ke, int wi
 	 else if( s== 1 )
 	 {
 	   PUSH_RANGE("LOOP-1",1);
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    size_t qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[ind]        = bforce2[  3*qq];
@@ -676,11 +771,17 @@ void EW::bcfortsg_indrev( int ib, int ie, int jb, int je, int kb, int ke, int wi
 	 }
 	 else if( s==2 )
 	 {
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i){
+	   RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i){
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    size_t qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[ind  ] = bforce3[  3*qq];
@@ -690,11 +791,17 @@ void EW::bcfortsg_indrev( int ib, int ie, int jb, int je, int kb, int ke, int wi
 	 }
 	 else if( s==3 )
 	 {
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i){
+RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i){
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    size_t qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[ind  ] = bforce4[  3*qq];
@@ -704,11 +811,17 @@ void EW::bcfortsg_indrev( int ib, int ie, int jb, int je, int kb, int ke, int wi
 	 }
 	 else if( s==4 )
 	 {
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+	   RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    size_t qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[ind  ] = bforce5[  3*qq];
@@ -717,18 +830,24 @@ void EW::bcfortsg_indrev( int ib, int ie, int jb, int je, int kb, int ke, int wi
 					  });
 
 	 }
-	 else if( s==5 )
-	   forallN<EXEC_BC, int, int,int>(
-					  RangeSegment(ks,ke+1),
-					  RangeSegment(js,je+1),
-					  RangeSegment(is,ie+1),
-					  [=] RAJA_DEVICE(int k, int j, int i) {
+	 else if( s==5 ){
+	   RAJA::RangeSegment k_range(ks,ke+1);
+	   RAJA::RangeSegment j_range(js,je+1);
+	   RAJA::RangeSegment i_range(is,ie+1);
+	   RAJA::kernel<EXEC_BC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+	   // forallN<EXEC_BC, int, int,int>(
+	   // 				  RangeSegment(ks,ke+1),
+	   // 				  RangeSegment(js,je+1),
+	   // 				  RangeSegment(is,ie+1),
+	   // 				  [=] RAJA_DEVICE(int k, int j, int i) {
 					    size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 					    size_t qq=(k-ks)*ijdel+(i-is)+(j-js)*(ie-is+1);
 					    u[ind  ] = bforce6[  3*qq];
 					    u[ind+npts] = bforce6[1+3*qq];
 					    u[ind+2*npts] = bforce6[2+3*qq];
-					  });
+					  });}
 	 POP_RANGE;
       }
       else if( bccnd[s]==3 )
@@ -826,10 +945,16 @@ void EW::bcfortsg_indrev( int ib, int ie, int jb, int je, int kb, int ke, int wi
 	 if( s==4 )
 	 {
 	    int k=1, kl=1;
-	    forallN<EXEC_BC2, int, int>(
-					  RangeSegment(jb+2,je-1),
-					  RangeSegment(ib+2,ie-1),
-					  [=] RAJA_DEVICE(int j, int i) {
+
+	   RAJA::RangeSegment j_range(jb+2,je-1);
+	   RAJA::RangeSegment i_range(ib+2,ie-1);
+	   RAJA::kernel<EXEC_BC2>(
+			     RAJA::make_tuple(j_range,i_range),
+			     [=]RAJA_DEVICE (int j,int i) {
+	    // forallN<EXEC_BC2, int, int>(
+	    // 				  RangeSegment(jb+2,je-1),
+	    // 				  RangeSegment(ib+2,ie-1),
+	    // 				  [=] RAJA_DEVICE(int j, int i) {
 		  size_t qq = i-ib+ni*(j-jb);
 		  size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 		  float_sw4 wx = strx[i-ib]*(d4a*(u[2*npts+ind+1]-u[2*npts+ind-1])+d4b*(u[2*npts+ind+2]-u[2*npts+ind-2]));
@@ -854,11 +979,15 @@ void EW::bcfortsg_indrev( int ib, int ie, int jb, int je, int kb, int ke, int wi
 	 else
 	 {
 	    int k=nz, kl=-1;
-
-	       forallN<EXEC_BC2, int, int>(
-					  RangeSegment(jb+2,je-1),
-					  RangeSegment(ib+2,ie-1),
-					  [=] RAJA_DEVICE(int j, int i) {
+	    RAJA::RangeSegment j_range(jb+2,je-1);
+	   RAJA::RangeSegment i_range(ib+2,ie-1);
+	   RAJA::kernel<EXEC_BC2>(
+			     RAJA::make_tuple(j_range,i_range),
+			     [=]RAJA_DEVICE (int j,int i) {
+	       // forallN<EXEC_BC2, int, int>(
+	       // 				  RangeSegment(jb+2,je-1),
+	       // 				  RangeSegment(ib+2,ie-1),
+	       // 				  [=] RAJA_DEVICE(int j, int i) {
 		  size_t qq = i-ib+ni*(j-jb);
 		  size_t ind = i-ib+ni*(j-jb)+nij*(k-kb);
 		  float_sw4 wx = strx[i-ib]*(d4a*(u[2*npts+ind+1]-u[2*npts+ind-1])+d4b*(u[2*npts+ind+2]-u[2*npts+ind-2]));
@@ -927,13 +1056,19 @@ void EW::addsgd4fort( int ifirst, int ilast, int jfirst, int jlast,
      
      const size_t ni = ilast-ifirst+1;
       const size_t nij = ni*(jlast-jfirst+1);
-
-      forallN<EXEC_FORT_PERM, int, int,int,int>(
-				  RangeSegment(kfirst+2,klast-1),
-				  RangeSegment(jfirst+2,jlast-1),
-				  RangeSegment(ifirst+2,ilast-1),
-				  RangeSegment(0,3),
-				  [=] RAJA_DEVICE(int k, int j, int i,int c) {
+      RAJA:: RangeSegment k_range(kfirst+2,klast-1);
+      RAJA::RangeSegment j_range(jfirst+2,jlast-1);
+      RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+      RAJA::RangeSegment c_range(0,3);
+      RAJA::kernel<EXEC_FORT_PERM>(
+				   RAJA::make_tuple(k_range, j_range,i_range,c_range),
+				   [=]RAJA_DEVICE (int k,int j,int i,int c) {
+      // forallN<EXEC_FORT_PERM, int, int,int,int>(
+      // 				  RangeSegment(kfirst+2,klast-1),
+      // 				  RangeSegment(jfirst+2,jlast-1),
+      // 				  RangeSegment(ifirst+2,ilast-1),
+      // 				  RangeSegment(0,3),
+      // 				  [=] RAJA_DEVICE(int k, int j, int i,int c) {
 
 	       float_sw4 birho=beta/rho(i,j,k);
 #pragma unroll 
@@ -1155,12 +1290,21 @@ void EW::addsgd4fort_indrev( int ifirst, int ilast, int jfirst, int jlast,
 	//#pragma simd
 	//#pragma ivdep
 	//    for( int i=ifirst+2; i <= ilast-2 ; i++ )
-	forallN<EXEC_FORT_PERM, int, int,int,int>(
-				  RangeSegment(kfirst+2,klast-1),
-				  RangeSegment(jfirst+2,jlast-1),
-				  RangeSegment(ifirst+2,ilast-1),
-				  RangeSegment(0,3),
-				  [=] RAJA_DEVICE(int k, int j, int i,int c){
+
+
+      RAJA:: RangeSegment k_range(kfirst+2,klast-1);
+      RAJA::RangeSegment j_range(jfirst+2,jlast-1);
+      RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+      RAJA::RangeSegment c_range(0,3);
+      RAJA::kernel<EXEC_FORT_PERM>(
+				   RAJA::make_tuple(k_range, j_range,i_range,c_range),
+				   [=]RAJA_DEVICE (int k,int j,int i,int c) {
+	// forallN<EXEC_FORT_PERM, int, int,int,int>(
+	// 			  RangeSegment(kfirst+2,klast-1),
+	// 			  RangeSegment(jfirst+2,jlast-1),
+	// 			  RangeSegment(ifirst+2,ilast-1),
+	// 			  RangeSegment(0,3),
+	// 			  [=] RAJA_DEVICE(int k, int j, int i,int c){
 	       float_sw4 birho=beta/rho(i,j,k);
 	       //#pragma unroll
 //	       for( int c=0 ; c < 3 ; c++ ){
@@ -1525,12 +1669,18 @@ void EW::addsgd4cfort_indrev( int ifirst, int ilast, int jfirst, int jlast,
 // #pragma simd
 // #pragma ivdep
 // 	    for( int i=ifirst+2; i <= ilast-2 ; i++ )
-forallN<EXEC, int, int,int>(
-			    RangeSegment(kfirst+2,klast-1),
-			    RangeSegment(jfirst+2,jlast-1),
-			    RangeSegment(ifirst+2,ilast-1),
-			    [=] RAJA_DEVICE(int k, int j, int i)
-	    {
+      RAJA::RangeSegment k_range(kfirst+2,klast-1);
+      RAJA::RangeSegment j_range(jfirst+2,jlast-1);
+      RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+      RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+// forallN<EXEC, int, int,int>(
+// 			    RangeSegment(kfirst+2,klast-1),
+// 			    RangeSegment(jfirst+2,jlast-1),
+// 			    RangeSegment(ifirst+2,ilast-1),
+// 			    [=] RAJA_DEVICE(int k, int j, int i)
+// 	    {
 	       float_sw4 irhoj=beta/(rho(i,j,k)*jac(i,j,k));
 #pragma unroll
 	       for( int c=0 ; c < 3 ; c++ ) {
@@ -1616,13 +1766,19 @@ void EW::addsgd6cfort_indrev(  int ifirst, int ilast, int jfirst, int jlast,
 // 	    for( int i=ifirst+3; i <= ilast-3 ; i++ )
 
 // This has not been testted May 16 2017
-forallN<EXEC, int, int,int>(
-			    RangeSegment(kfirst+3,klast-2),
-			    RangeSegment(jfirst+3,jlast-2),
-			    RangeSegment(ifirst+3,ilast-2),
-			    [=] RAJA_DEVICE(int k, int j, int i)
+      RAJA::RangeSegment k_range(kfirst+3,klast-2);
+      RAJA::RangeSegment j_range(jfirst+3,jlast-2);
+      RAJA::RangeSegment i_range(ifirst+3,ilast-2);
+RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+// forallN<EXEC, int, int,int>(
+// 			    RangeSegment(kfirst+3,klast-2),
+// 			    RangeSegment(jfirst+3,jlast-2),
+// 			    RangeSegment(ifirst+3,ilast-2),
+// 			    [=] RAJA_DEVICE(int k, int j, int i)
 
-	    {
+// 	    {
 	       float_sw4 birho=0.5*beta/(rho(i,j,k)*jac(i,j,k));
 	       for( int c=0 ; c < 3 ; c++ ) {
 		 up(c,i,j,k) += birho*( 
