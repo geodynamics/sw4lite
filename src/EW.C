@@ -3356,8 +3356,8 @@ void EW::evalRHS(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_L
 void EW::communicate_array( Sarray& u, int grid )
 {
   //std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  //communicate_array_async(u,grid);
-  communicate_array_org(u,grid);
+  communicate_array_async(u,grid);
+  //communicate_array_org(u,grid);
   // Use _async for the faster CUDA version
   //std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
@@ -6920,7 +6920,8 @@ float_sw4* EW::newmanagedh(size_t len){
    //std::cout<<"******Using overloaded new**********\n";
    //cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachHost);
 #ifdef CUDA_CODE
-   cudaMalloc(&ptr, len*sizeof(float_sw4));
+   //cudaMalloc(&ptr, len*sizeof(float_sw4));
+   cudaHostAlloc(&ptr,len*sizeof(float_sw4),cudaHostAllocMapped);
    //cudaMallocManaged(&ptr, len*sizeof(float_sw4),cudaMemAttachGlobal);
    map[ptr]=len*sizeof(float_sw4);
    //prefetched[ptr]=false;
