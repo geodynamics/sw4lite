@@ -28,7 +28,7 @@ using EXEC= RAJA::KernelPolicy<
 // typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<16>,cuda_threadblock_y_exec<4>,
 // 			      cuda_threadblock_z_exec<16>>>
 //   EXEC_LARGE;
-#define SYNC_DEVICE cudaDeviceSynchronize();
+#define SYNC_DEVICE //cudaDeviceSynchronize();
 #else
 typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
 			      omp_parallel_for_exec>>

@@ -17,7 +17,7 @@ using EXEC_CARTBC = RAJA::KernelPolicy<
 typedef RAJA::cuda_exec<REDUCE_BLOCK_SIZE> EXEC;
 //typedef cuda_reduce<REDUCE_BLOCK_SIZE> REDUCE_POLICY;
 using REDUCE_POLICY = RAJA::cuda_reduce;
-#define SYNC_DEVICE cudaDeviceSynchronize();
+#define SYNC_DEVICE //cudaDeviceSynchronize();
 
 #else
 typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,

@@ -73,13 +73,13 @@ using EXEC_FORT_PERM = RAJA::KernelPolicy<
       RAJA::statement::Tile<0, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_z_loop,
         RAJA::statement::Tile<1, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_y_loop,
 			      RAJA::statement::Tile<2, RAJA::statement::tile_fixed<1024>, RAJA::cuda_block_x_loop,
-          RAJA::statement::For<0, RAJA::cuda_thread_y_direct,
-            RAJA::statement::For<1, RAJA::cuda_thread_x_direct,
-				 RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+          RAJA::statement::For<0, RAJA::cuda_thread_z_direct,
+            RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+				 RAJA::statement::For<2, RAJA::cuda_thread_x_direct,
 						      RAJA::statement::For<3, RAJA::seq_exec,
 									   RAJA::statement::Lambda<0> >>>>>>>>>;
 
-#define SYNC_DEVICE cudaDeviceSynchronize();
+#define SYNC_DEVICE //cudaDeviceSynchronize();
 #else
 
 typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,

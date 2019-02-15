@@ -8,7 +8,7 @@ using namespace std;
 #endif
 using namespace RAJA;
 #include "mynvtx.h"
-
+#include "foralls.h"
 // Note 4,4,32 runs out of registers
 // 1 1 64 is almost twice as fast as 4 4 16 on the standalon kernel ( 6 ms for a 4 MPI rank piece )
 #ifdef CUDA_CODE
@@ -25,8 +25,59 @@ using EXEC= RAJA::KernelPolicy<
 											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
 														RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
 																     RAJA::statement::Lambda<0> >>>>>>>>;
+// 1m 58s on Loh2 100
+using EXEC1_OLDE1= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernelFixed<512,
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_x_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_z_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+														RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
+// 1m 55s
+using EXEC1_OLDE2= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernelFixed<256,
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<16>, RAJA::cuda_block_x_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<16>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_z_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+														RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
+//1m 32
+using EXEC1_OLDE3= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernelFixed<256,
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_z_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<16>, RAJA::cuda_block_x_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_z_direct,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
+														RAJA::statement::For<2, RAJA::cuda_thread_x_direct,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
+//1m 57
+using EXEC1_OLDE4= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernel<
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_z_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<16>, RAJA::cuda_block_x_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_z_loop,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_loop,
+														RAJA::statement::For<2, RAJA::cuda_thread_x_loop,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
 
-#define SYNC_DEVICE cudaDeviceSynchronize();
+//1m 32
+using EXEC1= RAJA::KernelPolicy<
+  RAJA::statement::CudaKernelFixed<256,
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_z_loop,
+			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<16>, RAJA::cuda_block_x_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_z_loop,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_loop,
+														RAJA::statement::For<2, RAJA::cuda_thread_x_loop,
+																     RAJA::statement::Lambda<0> >>>>>>>>;
+
+#define SYNC_DEVICE //cudaDeviceSynchronize();
 #else
 typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
 			      omp_parallel_for_exec>>
@@ -134,9 +185,18 @@ void rhs4sg_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int k
 RAJA::RangeSegment k_range(k1,k2+1);
      RAJA::RangeSegment j_range(jfirst+2,jlast-1);
      RAJA::RangeSegment i_range(ifirst+2,ilast-1);
-     RAJA::kernel<EXEC>(
+#define NO_COLLAPSE
+#if defined(NO_COLLAPSE)
+     Range<16> I(ifirst+2,ilast-1);
+     Range<4>J(jfirst+2,jlast-1);
+     Range<4>K(k1,k2+1);
+     forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
+#else
+
+     RAJA::kernel<EXEC1>(
 			     RAJA::make_tuple(k_range, j_range,i_range),
 			     [=]RAJA_DEVICE (int k,int j,int i) {
+#endif
      // forallN<EXEC, int, int,int>(
      // 				 RangeSegment(k1,k2+1),
      // 				 RangeSegment(jfirst+2,jlast-1),
