@@ -3062,6 +3062,23 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
   if (firstcall){
 
     PUSH_RANGE("ForceOffload::FirstCall",3);
+
+    cudaMallocManaged(&GPS,sizeof(GridPointSource*)*point_sources.size(),cudaMemAttachGlobal);
+    cudaMallocManaged(&idnts,sizeof(int)*m_identsources.size(),cudaMemAttachGlobal);
+    //GPS = SW4_NEW(Managed,GridPointSource*[point_sources.size()]);
+    //dnts = SW4_NEW(Managed,int[identsources.size()]);
+    GridPointSource **GPSL = GPS;
+    int *idnts_local=idnts;
+    
+    for( int r=0 ; r < m_identsources.size(); r++ ) idnts[r]=m_identsources[r];
+    for( int s=0 ; s < point_sources.size(); s++ ) GPS[s]=point_sources[s];
+
+    //std::cout<<"INIT TIME FUNCTION..";
+    RAJA::forall<EXEC> (RAJA::RangeSegment(0,point_sources.size()),[=] RAJA_DEVICE(int r){
+	GPSL[r]->initializeTimeFunction();
+      });
+    //std::cout<<"INIT TIME FUNCTION..DONE";
+
 #pragma omp parallel for
     for( int r=0 ; r<m_identsources.size()-1 ; r++ )
       {
@@ -3091,7 +3108,7 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
   for( int g =0 ; g < mNumberOfGrids ; g++ )
     a_F[g].set_to_zero();
   POP_RANGE;
-
+#ifdef ON_HOST
   PUSH_RANGE("ForceOffload:;HostCalc",5);
   //std::cout<<"PA SIZE "<<m_identsources.size()-1<<"\n";
 #pragma omp parallel for
@@ -3132,6 +3149,52 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
 	}
     }
   POP_RANGE;
+#else
+  GridPointSource **GPSL = GPS;
+  int *idnts_local=idnts;
+  typedef RAJA::cuda_exec<32,false> FORCE_LOOP_ASYNC;
+  float_sw4 *ForceVector_copy=ForceVector;
+  float_sw4 **ForceAddress_copy=ForceAddress;
+  //std::cout<<"FORMER HOST LOOP...";
+  RAJA::forall<FORCE_LOOP_ASYNC> (RAJA::RangeSegment(0,m_identsources.size()-1),[=] RAJA_DEVICE(int r)
+		       {
+      int index=r*3;
+      // nt s0 = idnts_local[r];
+      // int g = GPSL[s0]->m_grid;
+      // int i = point_sources[s0]->m_i0;
+      // int j = point_sources[s0]->m_j0;
+      // int k = point_sources[s0]->m_k0;
+      // size_t ind1 = a_F[g].index(1,i,j,k);
+      // //     size_t ind2 = a_F[g].index(2,i,j,k);
+      // //     size_t ind3 = a_F[g].index(3,i,j,k);
+      // size_t oc = a_F[g].m_offc;
+      // float_sw4* fptr =a_F[g].c_ptr();
+      // for (int i=0;i<3;i++)
+      // 	ForceVector_copy[index+i]=0.0;
+      for( int s=idnts_local[r]; s< idnts_local[r+1] ; s++ )
+	//  for( int s = 0 ; s < point_sources.size() ; s++ )
+	{
+	  float_sw4 fxyz[3];
+	  if( tt )
+	    GPSL[s]->getFxyztt(a_t,fxyz);
+	  else
+	    GPSL[s]->getFxyz(a_t,fxyz);
+	  for (int i=0;i<3;i++)
+	    *ForceAddress_copy[index+i]+=fxyz[i];
+	  //fptr[ind1]      += fxyz[0];
+	  //fptr[ind1+oc]   += fxyz[1];
+	  //fptr[ind1+2*oc] += fxyz[2];
+	  //	a_F[g](1,i,j,k) += fxyz[0];
+	  //	a_F[g](2,i,j,k) += fxyz[1];
+	  //	a_F[g](3,i,j,k) += fxyz[2];
+	  //	a_F[g](1,point_sources[s]->m_i0,point_sources[s]->m_j0,point_sources[s]->m_k0) += fxyz[0];
+	  //	a_F[g](2,point_sources[s]->m_i0,point_sources[s]->m_j0,point_sources[s]->m_k0) += fxyz[1];
+	  //	a_F[g](3,point_sources[s]->m_i0,point_sources[s]->m_j0,point_sources[s]->m_k0) += fxyz[2];
+	}
+      
+    });
+  //std::cout<<"FORMER HOST LOOP...DONE\n";
+#endif
   //#pragma omp parallel for
 #ifdef CUDA_CODE2
   for( int r=0 ; r<m_identsources.size()-1 ; r++ ){
@@ -3144,20 +3207,22 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
   }
 #endif
   // Need the lines below becuase the object is not in managed memory and the this pointer is host only
-  if(m_identsources.size() > 1)
-  {
-  float_sw4 *ForceVector_copy=ForceVector;
-  float_sw4 **ForceAddress_copy=ForceAddress;
-  PREFETCH(ForceVector);
-  PREFETCH(ForceAddress);
-  RAJA::forall<EXEC > (RAJA::RangeSegment(0,m_identsources.size()-1),[=] RAJA_DEVICE(int r)
-    {
-      int index=r*3;
-      //float_sw4* fptr =a_F[g].c_ptr();
-      for(int i=0;i<3;i++)
-	*ForceAddress_copy[index+i]+=ForceVector_copy[index+i]; // DOes this need to be an update and not an assignment
-    });
-  }	  
+  // if(m_identsources.size() > 1)
+  // {
+  // float_sw4 *ForceVector_copy=ForceVector;
+  // float_sw4 **ForceAddress_copy=ForceAddress;
+  // PREFETCH(ForceVector);
+  // PREFETCH(ForceAddress);						
+  // std::cout<<"FINAL CANDIADATE...";
+  // RAJA::forall<EXEC > (RAJA::RangeSegment(0,m_identsources.size()-1),[=] RAJA_DEVICE(int r)
+  //   {
+  //     int index=r*3;
+  //     //float_sw4* fptr =a_F[g].c_ptr();
+  //     for(int i=0;i<3;i++)
+  // 	*ForceAddress_copy[index+i]+=ForceVector_copy[index+i]; // DOes this need to be an update and not an assignment
+  //   });
+  // std::cout<<"FINAL CANDIADATE...DONE\n";
+  // }	  
 }
 
 //---------------------------------------------------------------------------

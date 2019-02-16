@@ -50,3 +50,12 @@ int main( int argc, char** argv )
 
    return 0;
 }
+#ifdef CUDA_CODE
+void CheckError(cudaError_t const err, const char* file, char const* const fun, const int line)
+{
+    if (err)
+    {
+      std::cerr<<"CUDA Error Code["<<err<<"]: "<<cudaGetErrorString(err)<<" "<<file<<" "<<fun<<" Line number:  "<<line<<"\n";
+    }
+}
+#endif

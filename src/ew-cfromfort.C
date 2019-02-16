@@ -25,7 +25,7 @@ using namespace RAJA;
 typedef RAJA::cuda_exec<1024,true> FEXEC;
 
 using EXEC= RAJA::KernelPolicy<
-  RAJA::statement::CudaKernel<
+  RAJA::statement::CudaKernelFixed<512,
     RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_x_loop,
 			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
 						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_z_loop,
@@ -35,7 +35,7 @@ using EXEC= RAJA::KernelPolicy<
 																     RAJA::statement::Lambda<0> >>>>>>>>;
 
 using EXEC_BC= RAJA::KernelPolicy<
-  RAJA::statement::CudaKernel<
+  RAJA::statement::CudaKernelFixed<512,
     RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_x_loop,
 			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
 						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_z_loop,
@@ -45,7 +45,7 @@ using EXEC_BC= RAJA::KernelPolicy<
 																     RAJA::statement::Lambda<0> >>>>>>>>;
 
 using EXEC_BC2= RAJA::KernelPolicy<
-  RAJA::statement::CudaKernel<
+  RAJA::statement::CudaKernelFixed<1024,
     RAJA::statement::Tile<0, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_x_loop,
 			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<32>, RAJA::cuda_block_y_loop,
 								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
@@ -69,7 +69,7 @@ using CEXEC_BC = RAJA::KernelPolicy<
 
 // PERM TURNED OFF FOR NOW 
 using EXEC_FORT_PERM = RAJA::KernelPolicy<
-    RAJA::statement::CudaKernel<
+  RAJA::statement::CudaKernelFixed<1024,
       RAJA::statement::Tile<0, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_z_loop,
         RAJA::statement::Tile<1, RAJA::statement::tile_fixed<1>, RAJA::cuda_block_y_loop,
 			      RAJA::statement::Tile<2, RAJA::statement::tile_fixed<1024>, RAJA::cuda_block_x_loop,

@@ -41,8 +41,56 @@
 #include "Sarray.h"
 //#include "Filter.h"
 #include "sw4.h"
+#include "sw4raja.h"
 
-class GridPointSource
+class Managed {
+public:
+  //static size_t mem_total;
+  static int host;
+  static int device;
+  Managed(){
+  }
+  ~Managed(){
+    //mem_total=0;
+  }
+#if defined(CUDA_CODE)
+  void *operator new(size_t len) {
+    void *ptr;
+    //mem_total+=len;
+    //std::cout<<"Total mem is now "<<mem_total/1024/1024<<" MB \n";
+    //std::cout<<"Call to Managed class "<<len<<"\n";
+
+    SW4_CheckDeviceError(cudaMallocManaged(&ptr, len));
+
+    //SW4_CheckDeviceError(cudaDeviceSynchronize());
+    return ptr;
+  }
+
+  void *operator new[](size_t len) {
+    void *ptr;
+    //mem_total+=len;
+    //std::cout<<"Total mem is now "<<mem_total/1204/1024<<" MB \n";
+    //std::cout<<"Call to Managed class "<<len<<"\n";
+    SW4_CheckDeviceError(cudaMallocManaged(&ptr, len));
+    //SW4_CheckDeviceError(cudaDeviceSynchronize());
+    return ptr;
+  }
+  
+
+  void operator delete(void *ptr) {
+    //SW4_CheckDeviceError(cudaDeviceSynchronize());
+    SW4_CheckDeviceError(cudaFree(ptr));
+  }
+
+  void operator delete[](void *ptr) {
+    //SW4_CheckDeviceError(cudaDeviceSynchronize());
+    SW4_CheckDeviceError(cudaFree(ptr));
+
+  }
+#endif
+};
+
+class GridPointSource:public Managed
 {
    friend std::ostream& operator<<(std::ostream& output, const GridPointSource& s);
 public:
@@ -66,7 +114,9 @@ public:
   __host__ __device__ void getFxyz( float_sw4 t, float_sw4* fxyz ) const;
   __host__ __device__ void getFxyztt( float_sw4 t, float_sw4* fxyz ) const;
 #else
-  void getFxyz( float_sw4 t, float_sw4* fxyz ) const;
+  RAJA_HOST_DEVICE
+  void getFxyz( float_sw4 t, float_sw4* fxyz )  const;
+  RAJA_HOST_DEVICE
   void getFxyztt( float_sw4 t, float_sw4* fxyz ) const;
 #endif
   void getFxyz_notime( float_sw4* fxyz ) const;
@@ -95,14 +145,16 @@ public:
    //// discretize a time function at each time step and change the time function to be "Discrete()"
    //  void discretizeTimeFuncAndFilter(float_sw4 tStart, float_sw4 dt, int nSteps, Filter *filter_ptr);
 
- private:
+ 
 
   GridPointSource();
 #ifdef SW4_CUDA
   __device__ void initializeTimeFunction();
 #else
+RAJA_HOST_DEVICE
   void initializeTimeFunction();
 #endif
+private:
   float_sw4 mForces[3];
    //  float_sw4 mAmp;
   float_sw4 mFreq, mT0;

@@ -111,6 +111,7 @@ GridPointSource::~GridPointSource()
 #ifdef SW4_CUDA
 __device__ void GridPointSource::initializeTimeFunction()
 #else
+  RAJA_HOST_DEVICE
 void GridPointSource::initializeTimeFunction()
 #endif
 {
@@ -323,6 +324,7 @@ void GridPointSource::initializeTimeFunction()
 }
 
 //-----------------------------------------------------------------------
+RAJA_HOST_DEVICE
 void GridPointSource::getFxyz( float_sw4 t, float_sw4* fxyz ) const
 {
   //std::cout<<"getFxyz\n";
@@ -456,7 +458,8 @@ void GridPointSource::getFxyz_notime( float_sw4* fxyz ) const
 }
 
 //-----------------------------------------------------------------------
-void GridPointSource::getFxyztt( float_sw4 t, float_sw4* fxyz ) const
+RAJA_HOST_DEVICE
+void GridPointSource::getFxyztt( float_sw4 t, float_sw4* fxyz ) const 
 {
   //std::cout<<"getFxyztt\n";
    float_sw4 afun, afunv[6];

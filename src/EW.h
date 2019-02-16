@@ -459,6 +459,9 @@ class EW
    void setup_device_communication_array();
    void communicate_arrayCU( Sarray& u, int g , int st);
 
+   int *idnts;
+   GridPointSource **GPS ;
+
 #ifdef SW4_CUDA
    void CheckCudaCall(cudaError_t command, const char * commandName, const char * fileName, int line);
 #endif

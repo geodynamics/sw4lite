@@ -11,7 +11,7 @@
 //#include "Qspline.h"
 
 //#include "time_functions.h"
-
+#include "sw4raja.h"
 
 using namespace std;
 
@@ -73,26 +73,26 @@ Source::Source(EW *a_ew,
    mNpar = npar;
    if( mNpar > 0 )
    {
-      mPar   = new float_sw4[mNpar];
+     mPar   = new(Managed) float_sw4[mNpar];
       for( int i= 0 ; i < mNpar ; i++ )
 	 mPar[i] = pars[i];
    }
    else
    {
       mNpar = 2;
-      mPar = new float_sw4[2];
+      mPar = new(Managed) float_sw4[2];
    }
    mNipar = nipar;
    if( mNipar > 0 )
    {
-      mIpar = new int[mNipar];
+     mIpar = new(Managed) int[mNipar];
       for( int i= 0 ; i < mNipar ; i++ )
          mIpar[i] = ipars[i];
    }
    else
    {
       mNipar = 1;
-      mIpar  = new int[1];
+      mIpar  = new(Managed) int[1];
    }
 
    //   if( mTimeDependence == iDiscrete || mTimeDependence == iDiscrete6moments )
@@ -143,27 +143,27 @@ Source::Source(EW *a_ew, float_sw4 frequency, float_sw4 t0,
   mNpar = npar;
   if( mNpar > 0 )
   {
-     mPar   = new float_sw4[mNpar];
+    mPar   = new(Managed) float_sw4[mNpar];
      for( int i= 0 ; i < mNpar ; i++ )
 	mPar[i] = pars[i];
   }
   else
   {
      mNpar = 2;
-     mPar = new float_sw4[2];
+     mPar = new(Managed) float_sw4[2];
   }
 
   mNipar = nipar;
   if( mNipar > 0 )
   {
-     mIpar = new int[mNipar];
+    mIpar = new(Managed) int[mNipar];
      for( int i= 0 ; i < mNipar ; i++ )
         mIpar[i] = ipars[i];
   }
   else
   {
      mNipar = 1;
-     mIpar  = new int[1];
+     mIpar  = new(Managed) int[1];
   }
   //  if( mTimeDependence == iDiscrete || mTimeDependence == iDiscrete6moments )
   //     spline_interpolation();
@@ -2122,13 +2122,13 @@ Source* Source::copy( std::string a_name )
    retval->mZ0 = mZ0;
 
    retval->mNpar = mNpar;
-   retval->mPar = new float_sw4[mNpar];
+   retval->mPar = new(Managed) float_sw4[mNpar];
    for( int i=0 ; i < mNpar ; i++ )
       retval->mPar[i] = mPar[i];
 //   retval->mdevPar = mdevPar;
 
    retval->mNipar = mNipar;
-   retval->mIpar = new int[mNipar];
+   retval->mIpar = new(Managed) int[mNipar];
    for( int i=0 ; i < mNipar ; i++ )
       retval->mIpar[i] = mIpar[i];
 //   retval->mdevIpar = mIpar;
