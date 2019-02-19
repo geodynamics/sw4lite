@@ -9,7 +9,7 @@ using namespace std;
 #endif
 using namespace RAJA;
 #include "mynvtx.h"
-
+#include "foralls.h"
 // Note 4,4,32 runs out of registers
 #ifdef CUDA_CODE
 // typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<4>,cuda_threadblock_y_exec<4>,
@@ -18,12 +18,12 @@ using namespace RAJA;
 
 using EXEC= RAJA::KernelPolicy<
   RAJA::statement::CudaKernelFixed<256,
-    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_x_loop,
+    RAJA::statement::Tile<0, RAJA::statement::tile_fixed<16>, RAJA::cuda_block_x_loop,
 			  RAJA::statement::Tile<1, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_y_loop,
-						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<16>, RAJA::cuda_block_z_loop,
-								      RAJA::statement::For<0, RAJA::cuda_thread_x_direct,
-											   RAJA::statement::For<1, RAJA::cuda_thread_y_direct,
-														RAJA::statement::For<2, RAJA::cuda_thread_z_direct,
+						RAJA::statement::Tile<2, RAJA::statement::tile_fixed<4>, RAJA::cuda_block_z_loop,
+								      RAJA::statement::For<0, RAJA::cuda_thread_x_loop,
+											   RAJA::statement::For<1, RAJA::cuda_thread_y_loop,
+														RAJA::statement::For<2, RAJA::cuda_thread_z_loop,
 																     RAJA::statement::Lambda<0> >>>>>>>>;
 // typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<16>,cuda_threadblock_y_exec<4>,
 // 			      cuda_threadblock_z_exec<16>>>
@@ -120,9 +120,16 @@ void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, i
       RAJA::RangeSegment k_range(1,6+1);
      RAJA::RangeSegment j_range(jfirst+2,jlast-1);
      RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+#if defined(UNRAJA)
+     Range<16> I(ifirst+2,ilast-1);
+     Range<4>J(jfirst+2,jlast-1);
+     Range<6>K(1,6+1);
+     forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
+#else
      RAJA::kernel<EXEC>(
 			     RAJA::make_tuple(k_range, j_range,i_range),
 			     [=]RAJA_DEVICE (int k,int j,int i) {
+#endif
 	    //   forallN<EXEC, int, int,int>(
 	    // 			    RangeSegment(1,7),
 	    // 			    RangeSegment(jfirst+2,jlast-1),
@@ -617,9 +624,17 @@ void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, i
    RAJA::RangeSegment k_range(kstart,klast-1);
 	RAJA::RangeSegment j_range(jfirst+2,jlast-1);
 	RAJA::RangeSegment i_range(ifirst+2,ilast-1);
+
+#if defined(UNRAJA)
+     Range<16> I(ifirst+2,ilast-1);
+     Range<4>J(jfirst+2,jlast-1);
+     Range<4>K(kstart,klast-1);
+     forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
+#else
      RAJA::kernel<EXEC>(
 			     RAJA::make_tuple(k_range, j_range,i_range),
 			     [=]RAJA_DEVICE (int k,int j,int i) {
+#endif
 	 //   forallN<EXEC, int, int,int>(
 	 // 		    RangeSegment(kstart,klast-1),
 	 // 		    RangeSegment(jfirst+2,jlast-1),

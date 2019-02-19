@@ -185,8 +185,7 @@ void rhs4sg_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int k
 RAJA::RangeSegment k_range(k1,k2+1);
      RAJA::RangeSegment j_range(jfirst+2,jlast-1);
      RAJA::RangeSegment i_range(ifirst+2,ilast-1);
-#define NO_COLLAPSE
-#if defined(NO_COLLAPSE)
+#if defined(UNRAJA)
      Range<16> I(ifirst+2,ilast-1);
      Range<4>J(jfirst+2,jlast-1);
      Range<4>K(k1,k2+1);
