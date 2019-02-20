@@ -624,12 +624,11 @@ void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, i
    RAJA::RangeSegment k_range(kstart,klast-1);
 	RAJA::RangeSegment j_range(jfirst+2,jlast-1);
 	RAJA::RangeSegment i_range(ifirst+2,ilast-1);
-
-#if defined(UNRAJA)
-     Range<16> I(ifirst+2,ilast-1);
+    Range<16> I(ifirst+2,ilast-1);
      Range<4>J(jfirst+2,jlast-1);
      Range<4>K(kstart,klast-1);
-     forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
+#if defined(UNRAJA)
+      forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
 #else
      RAJA::kernel<EXEC>(
 			     RAJA::make_tuple(k_range, j_range,i_range),
@@ -928,10 +927,41 @@ void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, i
              c1*(u(2,i,j-1,k+1)-u(2,i,j-1,k-1)) ) ) );
 
 // 4 ops, tot=773
-	    lu(1,i,j,k) = a1*lu(1,i,j,k) + r1*ijac;
+	    lu(1,i,j,k) = a1*lu(1,i,j,k) + r1*ijac;});
+
+#if defined(UNRAJA)
+      forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
+#else
+     RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+#endif
 // v-equation
 
-	    r1 = 0;
+			       float_sw4 ijac = strx(i)*stry(j)/jac(i,j,k);
+            float_sw4 istry = 1.0/(stry(j));
+            float_sw4 istrx = 1.0/(strx(i));
+            float_sw4 istrxy = istry*istrx;
+
+            float_sw4 r1 = 0;
+
+	    // pp derivative (u)
+// 53 ops, tot=58
+	    float_sw4 cof1=(2*mu(i-2,j,k)+la(i-2,j,k))*met(1,i-2,j,k)*met(1,i-2,j,k)
+	       *strx(i-2);
+	    float_sw4 cof2=(2*mu(i-1,j,k)+la(i-1,j,k))*met(1,i-1,j,k)*met(1,i-1,j,k)
+	       *strx(i-1);
+	    float_sw4 cof3=(2*mu(i,j,k)+la(i,j,k))*met(1,i,j,k)*met(1,i,j,k)
+		  *strx(i);
+	    float_sw4 cof4=(2*mu(i+1,j,k)+la(i+1,j,k))*met(1,i+1,j,k)*met(1,i+1,j,k)
+	     *strx(i+1);
+	    float_sw4 cof5=(2*mu(i+2,j,k)+la(i+2,j,k))*met(1,i+2,j,k)*met(1,i+2,j,k)
+	     *strx(i+2);
+            float_sw4 mux1 = cof2 -tf*(cof3+cof1);
+            float_sw4 mux2 = cof1 + cof4+3*(cof3+cof2);
+            float_sw4 mux3 = cof2 + cof5+3*(cof4+cof3);
+            float_sw4 mux4 = cof4-tf*(cof3+cof5);
+
 	    // pp derivative (v)
 // 43 ops, tot=816
 	    cof1=(mu(i-2,j,k))*met(1,i-2,j,k)*met(1,i-2,j,k)*strx(i-2);
@@ -1214,7 +1244,40 @@ void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, i
              c1*(u(3,i,j-1,k+1)-u(3,i,j-1,k-1)) )*istrx   ) );
 
 // 4 ops, tot=1541
-	    lu(2,i,j,k) = a1*lu(2,i,j,k) + r1*ijac;
+	    lu(2,i,j,k) = a1*lu(2,i,j,k) + r1*ijac;});
+
+#if defined(UNRAJA)
+      forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
+#else
+     RAJA::kernel<EXEC>(
+			     RAJA::make_tuple(k_range, j_range,i_range),
+			     [=]RAJA_DEVICE (int k,int j,int i) {
+#endif
+// v-equation
+
+			       float_sw4 ijac = strx(i)*stry(j)/jac(i,j,k);
+            float_sw4 istry = 1.0/(stry(j));
+            float_sw4 istrx = 1.0/(strx(i));
+            float_sw4 istrxy = istry*istrx;
+
+            float_sw4 r1 = 0;
+
+	    // pp derivative (u)
+// 53 ops, tot=58
+	    float_sw4 cof1=(2*mu(i-2,j,k)+la(i-2,j,k))*met(1,i-2,j,k)*met(1,i-2,j,k)
+	       *strx(i-2);
+	    float_sw4 cof2=(2*mu(i-1,j,k)+la(i-1,j,k))*met(1,i-1,j,k)*met(1,i-1,j,k)
+	       *strx(i-1);
+	    float_sw4 cof3=(2*mu(i,j,k)+la(i,j,k))*met(1,i,j,k)*met(1,i,j,k)
+		  *strx(i);
+	    float_sw4 cof4=(2*mu(i+1,j,k)+la(i+1,j,k))*met(1,i+1,j,k)*met(1,i+1,j,k)
+	     *strx(i+1);
+	    float_sw4 cof5=(2*mu(i+2,j,k)+la(i+2,j,k))*met(1,i+2,j,k)*met(1,i+2,j,k)
+	     *strx(i+2);
+            float_sw4 mux1 = cof2 -tf*(cof3+cof1);
+            float_sw4 mux2 = cof1 + cof4+3*(cof3+cof2);
+            float_sw4 mux3 = cof2 + cof5+3*(cof4+cof3);
+            float_sw4 mux4 = cof4-tf*(cof3+cof5);
 	 
 // w-equation
 	    r1 = 0;
