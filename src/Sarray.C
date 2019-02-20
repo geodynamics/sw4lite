@@ -35,7 +35,7 @@
 #include <cstdlib>
 #include <fcntl.h>
 #include <unistd.h>
-
+#include "sw4raja.h"
 using namespace std;
 void PrintPointerAttributes(void *ptr);
 #ifdef SW4_CUDA
@@ -438,12 +438,15 @@ void Sarray::side_plane_fortran( int side, int wind[6], int nGhost )
 void Sarray::set_to_zero()
 {
   double *m_data_local=m_data;
-  prefetch();
+  //prefetch();
+  //SW4_CheckDeviceError(cudaPeekAtLastError());
+  //SW4_CheckDeviceError(cudaStreamSynchronize(0));
+  //if (m_npts==1) std::cout<<"Sarray size "<<m_npts<<"\n"<<std::flush;
   RAJA::forall<EXEC > (RAJA::RangeSegment(0,m_npts),[=] RAJA_DEVICE(size_t i){
       m_data_local[i]=0.0;
     });
 #ifdef CUDA_CODE
-  cudaDeviceSynchronize();
+  SW4_CheckDeviceError(cudaStreamSynchronize(0));
 #endif
   return;
 #pragma omp parallel for

@@ -3060,23 +3060,25 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
 {
   static int firstcall=1;
   if (firstcall){
-
+    //SW4_CheckDeviceError(cudaPeekAtLastError());
     PUSH_RANGE("ForceOffload::FirstCall",3);
 
-    cudaMallocManaged(&GPS,sizeof(GridPointSource*)*point_sources.size(),cudaMemAttachGlobal);
-    cudaMallocManaged(&idnts,sizeof(int)*m_identsources.size(),cudaMemAttachGlobal);
+    SW4_CheckDeviceError(cudaMallocManaged(&GPS,sizeof(GridPointSource*)*(point_sources.size()+1),cudaMemAttachGlobal));
+    SW4_CheckDeviceError(cudaMallocManaged(&idnts,sizeof(int)*(m_identsources.size()+1),cudaMemAttachGlobal));
+    SW4_CheckDeviceError(cudaPeekAtLastError());
     //GPS = SW4_NEW(Managed,GridPointSource*[point_sources.size()]);
     //dnts = SW4_NEW(Managed,int[identsources.size()]);
     GridPointSource **GPSL = GPS;
     int *idnts_local=idnts;
-    
+    //std::cout<<" COunts "<<m_identsources.size()<<" "<<point_sources.size()<<"\n"<<std::flush;
     for( int r=0 ; r < m_identsources.size(); r++ ) idnts[r]=m_identsources[r];
     for( int s=0 ; s < point_sources.size(); s++ ) GPS[s]=point_sources[s];
-
+    //SW4_CheckDeviceError(cudaPeekAtLastError());
     //std::cout<<"INIT TIME FUNCTION..";
     RAJA::forall<EXEC> (RAJA::RangeSegment(0,point_sources.size()),[=] RAJA_DEVICE(int r){
 	GPSL[r]->initializeTimeFunction();
       });
+    //SW4_CheckDeviceError(cudaPeekAtLastError());
     //std::cout<<"INIT TIME FUNCTION..DONE";
 
 #pragma omp parallel for
@@ -3105,6 +3107,9 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
   } // First call only ends
   
   PUSH_RANGE("ForceOffload::set_to_zero",4);
+  //std::cout<<"NUMBER OF GRIDS "<<mNumberOfGrids<<"\n";
+  //for( int g =0 ; g < mNumberOfGrids ; g++ ) std::cout<<g<<",";
+  //std::cout<<"\n";
   for( int g =0 ; g < mNumberOfGrids ; g++ )
     a_F[g].set_to_zero();
   POP_RANGE;
