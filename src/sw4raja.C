@@ -1,5 +1,6 @@
 #include "sw4.h"
 #include "sw4raja.h"
+
 void * operator new(std::size_t size,Space loc) throw(std::bad_alloc){
 #ifdef CUDA_CODE
 if (loc==Managed){
@@ -151,6 +152,7 @@ void * operator new[](std::size_t size,Space loc) throw(std::bad_alloc){
     throw std::bad_alloc();
   }
   return NULL;
+#endif
 }
 
-#endif
+

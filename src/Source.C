@@ -1781,7 +1781,7 @@ void Source::set_grid_point_sources4( EW *a_EW, vector<GridPointSource*>& point_
 			jaci = 1/a_EW->mJ(i,j,k);
 		     else
 			jaci = 1.0/(h*h*h);
-
+		     std::cout<<"SIZE "<<mForces.size()<<"\n"<<std::flush;
 		     float_sw4 fx = -(mForces[0]*wFx+mForces[1]*wFy+mForces[2]*wFz)*jaci;
 		     float_sw4 fy = -(mForces[1]*wFx+mForces[3]*wFy+mForces[4]*wFz)*jaci;
 		     float_sw4 fz = -(mForces[2]*wFx+mForces[4]*wFy+mForces[5]*wFz)*jaci;

@@ -3062,12 +3062,16 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
   if (firstcall){
     //SW4_CheckDeviceError(cudaPeekAtLastError());
     PUSH_RANGE("ForceOffload::FirstCall",3);
-
+#ifdef CUDA_CODE
     SW4_CheckDeviceError(cudaMallocManaged(&GPS,sizeof(GridPointSource*)*(point_sources.size()+1),cudaMemAttachGlobal));
     SW4_CheckDeviceError(cudaMallocManaged(&idnts,sizeof(int)*(m_identsources.size()+1),cudaMemAttachGlobal));
     SW4_CheckDeviceError(cudaPeekAtLastError());
-    //GPS = SW4_NEW(Managed,GridPointSource*[point_sources.size()]);
-    //dnts = SW4_NEW(Managed,int[identsources.size()]);
+#else
+    GPS = new GridPointSource*[point_sources.size()+1];
+    idnts = new int[m_identsources.size()+1];
+#endif
+    // GPS = SW4_NEW(Managed,GridPointSource*[point_sources.size()]);
+    // idnts = SW4_NEW(Managed,int[identsources.size()]);
     GridPointSource **GPSL = GPS;
     int *idnts_local=idnts;
     //std::cout<<" COunts "<<m_identsources.size()<<" "<<point_sources.size()<<"\n"<<std::flush;
@@ -3157,7 +3161,11 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
 #else
   GridPointSource **GPSL = GPS;
   int *idnts_local=idnts;
+#ifdef CUDA_CODE
   typedef RAJA::cuda_exec<32,false> FORCE_LOOP_ASYNC;
+#else
+  typedef RAJA::omp_parallel_for_exec FORCE_LOOP_ASYNC;
+#endif
   float_sw4 *ForceVector_copy=ForceVector;
   float_sw4 **ForceAddress_copy=ForceAddress;
   //std::cout<<"FORMER HOST LOOP...";

@@ -82,24 +82,70 @@ using EXEC_FORT_PERM = RAJA::KernelPolicy<
 #define SYNC_DEVICE //cudaDeviceSynchronize();
 #else
 
-typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
-			      omp_parallel_for_exec>>
-  EXEC_BC;
-typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
-			      omp_parallel_for_exec>>
-  EXEC;
-typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
-			      omp_parallel_for_exec,simd_exec>>
-  EXEC_FORT;
-typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
-			      simd_exec,seq_exec>,
-				       Permute<PERM_LIJK,
-					       Execute 
-				       >>
-  EXEC_FORT_PERM;
 
-typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec>>
-  EXEC_BC2;
+using EXEC_BC=
+  RAJA::KernelPolicy<
+  RAJA::statement::For<0, RAJA::omp_parallel_for_exec,
+		       RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
+					    RAJA::statement::For<2, RAJA::omp_parallel_for_exec,
+  RAJA::statement::Lambda<0>
+					    >
+        >
+      >
+    >;
+
+using EXEC = EXEC_BC;
+
+using EXEC_FORT  =
+    RAJA::KernelPolicy<
+  RAJA::statement::For<3, RAJA::omp_parallel_for_exec,
+      RAJA::statement::For<2, RAJA::omp_parallel_for_exec,
+			   RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
+        RAJA::statement::For<0, RAJA::simd_exec,
+          RAJA::statement::Lambda<0>
+			     >>
+        >
+      >
+    >;
+
+using EXEC_FORT_PERM  =
+    RAJA::KernelPolicy<
+  RAJA::statement::For<3, RAJA::omp_parallel_for_exec,
+      RAJA::statement::For<2, RAJA::omp_parallel_for_exec,
+			   RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
+        RAJA::statement::For<0, RAJA::simd_exec,
+          RAJA::statement::Lambda<0>
+			     >>
+        >
+      >
+    >;
+
+using EXEC_BC2=
+  RAJA::KernelPolicy<
+  RAJA::statement::For<0, RAJA::omp_parallel_for_exec,
+  RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
+  RAJA::statement::Lambda<0>
+        >
+      >
+    >;
+// typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
+// 			      omp_parallel_for_exec>>
+//   EXEC_BC;
+// typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
+// 			      omp_parallel_for_exec>>
+//   EXEC;
+// typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
+// 			      omp_parallel_for_exec,simd_exec>>
+//   EXEC_FORT;
+// typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
+// 			      simd_exec,seq_exec>,
+// 				       Permute<PERM_LIJK,
+// 					       Execute 
+// 				       >>
+//   EXEC_FORT_PERM;
+
+// typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec>>
+//   EXEC_BC2;
 
 typedef RAJA::omp_parallel_for_exec FEXEC;
 #define SYNC_DEVICE 

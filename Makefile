@@ -34,10 +34,10 @@ ifeq ($(findstring fourier,$(HOSTNAME)),fourier)
 else ifeq ($(findstring quartz,$(HOSTNAME)),quartz)
   FC = mpifort
   CXX = mpicxx
-  RAJA_LOCATION=/g/g92/lin32/RAJA-Quartz/install_tree
+  RAJA_LOCATION=/usr/workspace/wsb/ramesh/RAJA/2019/RAJA-0.7.0/install_quartz
   OMPOPT = -fopenmp -std=c++11 -O3 -qoverride-limits 
   MKL_PATH = /usr/tce/packages/mkl/mkl-11.3.3/lib
-  EXTRA_CXX_FLAGS  = -xCORE-AVX2 -I $(RAJA_LOCATION)/include -DRAJA_ENABLE_NESTED 
+  EXTRA_CXX_FLAGS  = -DRAJA03 -xCORE-AVX2 -I $(RAJA_LOCATION)/include -DRAJA_ENABLE_NESTED 
   EXTRA_FORT_FLAGS = -xCORE-AVX2
   EXTRA_LINK_FLAGS = -O3 -fopenmp -Wl,-rpath=$(SW4ROOT)/lib -Wl,-rpath=${MKL_PATH} -L${MKL_PATH} -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -lifcore -L$(RAJA_LOCATION)/lib  -lRAJA
   openmp = yes

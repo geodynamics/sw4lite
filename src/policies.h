@@ -20,9 +20,19 @@ using REDUCE_POLICY = RAJA::cuda_reduce;
 #define SYNC_DEVICE //cudaDeviceSynchronize();
 
 #else
-typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
-  omp_parallel_for_exec>>
-  EXEC_CARTBC;
+
+using EXEC_CARTBC=
+  RAJA::KernelPolicy<
+  RAJA::statement::For<0, RAJA::omp_parallel_for_exec,
+  RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
+  RAJA::statement::Lambda<0>
+        >
+      >
+    >;
+
+// typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
+//   omp_parallel_for_exec>>
+//   EXEC_CARTBC;
 
 typedef RAJA::omp_parallel_for_exec EXEC;
 typedef omp_reduce REDUCE_POLICY;

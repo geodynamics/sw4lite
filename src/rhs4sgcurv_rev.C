@@ -9,7 +9,9 @@ using namespace std;
 #endif
 using namespace RAJA;
 #include "mynvtx.h"
+#if defined(UNRAJA)
 #include "foralls.h"
+#endif
 // Note 4,4,32 runs out of registers
 #ifdef CUDA_CODE
 // typedef NestedPolicy<ExecList<cuda_threadblock_x_exec<4>,cuda_threadblock_y_exec<4>,
@@ -30,29 +32,40 @@ using EXEC= RAJA::KernelPolicy<
 //   EXEC_LARGE;
 #define SYNC_DEVICE //cudaDeviceSynchronize();
 #else
-typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
-			      omp_parallel_for_exec>>
-EXEC0;
-typedef RAJA::NestedPolicy<
-  RAJA::ExecList<RAJA::omp_collapse_nowait_exec,
-		 RAJA::omp_collapse_nowait_exec,
-		 RAJA::omp_collapse_nowait_exec >,
-  RAJA::OMP_Parallel<> > EXEC1;
 
-typedef RAJA::NestedPolicy<
-  RAJA::ExecList<RAJA::omp_parallel_for_exec,
-		 RAJA::seq_exec,
-		 RAJA::simd_exec > > EXEC2;
+using EXEC3 =
+  RAJA::KernelPolicy<
+  RAJA::statement::For<0, RAJA::omp_parallel_for_exec,
+  RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
+		       RAJA::statement::For<2, RAJA::simd_exec,
+  RAJA::statement::Lambda<0>
+					    >
+        >
+      >
+    >;
+// typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
+// 			      omp_parallel_for_exec>>
+// EXEC0;
+// typedef RAJA::NestedPolicy<
+//   RAJA::ExecList<RAJA::omp_collapse_nowait_exec,
+// 		 RAJA::omp_collapse_nowait_exec,
+// 		 RAJA::omp_collapse_nowait_exec >,
+//   RAJA::OMP_Parallel<> > EXEC1;
 
-typedef RAJA::NestedPolicy<
-  RAJA::ExecList<RAJA::omp_parallel_for_exec,
-		 RAJA::omp_parallel_for_exec,
-		 RAJA::simd_exec > > EXEC3;
-typedef RAJA::NestedPolicy<
-  RAJA::ExecList<RAJA::seq_exec, RAJA::seq_exec, RAJA::simd_exec > > EXEC4;
+// typedef RAJA::NestedPolicy<
+//   RAJA::ExecList<RAJA::omp_parallel_for_exec,
+// 		 RAJA::seq_exec,
+// 		 RAJA::simd_exec > > EXEC2;
 
-typedef RAJA::NestedPolicy<
-  RAJA::ExecList<RAJA::omp_parallel_for_exec, RAJA::seq_exec, RAJA::seq_exec > > EXEC5;
+// typedef RAJA::NestedPolicy<
+//   RAJA::ExecList<RAJA::omp_parallel_for_exec,
+// 		 RAJA::omp_parallel_for_exec,
+// 		 RAJA::simd_exec > > EXEC3;
+// typedef RAJA::NestedPolicy<
+//   RAJA::ExecList<RAJA::seq_exec, RAJA::seq_exec, RAJA::simd_exec > > EXEC4;
+
+// typedef RAJA::NestedPolicy<
+//   RAJA::ExecList<RAJA::omp_parallel_for_exec, RAJA::seq_exec, RAJA::seq_exec > > EXEC5;
 
 #define EXEC EXEC3
 #define SYNC_DEVICE
@@ -624,10 +637,11 @@ void rhs4sgcurv_rev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, i
    RAJA::RangeSegment k_range(kstart,klast-1);
 	RAJA::RangeSegment j_range(jfirst+2,jlast-1);
 	RAJA::RangeSegment i_range(ifirst+2,ilast-1);
-    Range<16> I(ifirst+2,ilast-1);
+ 
+#if defined(UNRAJA)
+          Range<16> I(ifirst+2,ilast-1);
      Range<4>J(jfirst+2,jlast-1);
      Range<4>K(kstart,klast-1);
-#if defined(UNRAJA)
       forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
 #else
      RAJA::kernel<EXEC>(
