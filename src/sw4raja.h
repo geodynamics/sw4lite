@@ -24,5 +24,4 @@ void operator delete[](void *ptr, Space loc) throw();
 void operator delete(void *ptr, Space loc,const char *file, int line) throw();
 void operator delete[](void *ptr, Space loc,const char *file, int line) throw();
 
-
 #endif

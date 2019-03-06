@@ -63,10 +63,11 @@ if (loc==Managed){
   std::cerr<<"Unknown memory space for allocation request "<<loc<<"\n";
     throw std::bad_alloc();
   }
+// END CUDA CODE
 #else
+ if (size==0) size=1; // new has to return an valid pointer for 0 size.
  if ((loc==Managed)||(loc==Device)||(loc==Pinned)){
-    //std::cout<<"Managed location not available yet \n";
-    return ::operator new(size);
+   return ::operator new(size);
   } else if (loc==Host){
     //std::cout<<"Calling my placement new \n";
     return ::operator new(size);
@@ -148,11 +149,13 @@ void * operator new[](std::size_t size,Space loc) throw(std::bad_alloc){
 #endif
   } else {
     //cudaHostAlloc(&ptr,size+sizeof(size_t)*MEM_PAD_LEN,cudaHostAllocMapped));
-    std::cerr<<"Unknown memory space for allocation request "<<loc<<"\n";
+    std::cerr<<"Unknown memory space for allocation request "<<loc<<"\n"<<std::flush;
     throw std::bad_alloc();
   }
-  return NULL;
-#endif
+#else
+  return ::operator new(size);
+ #endif
 }
+
 
 

@@ -81,11 +81,22 @@ using EXEC1= RAJA::KernelPolicy<
 
 #define SYNC_DEVICE //cudaDeviceSynchronize();
 #else
-using EXEC1 =
+using EXEC1_COLL =
     RAJA::KernelPolicy<
       RAJA::statement::Collapse<RAJA::omp_parallel_collapse_exec,
                                 RAJA::ArgList<2,1, 0>,  
         RAJA::statement::Lambda<0>
+      >
+    >;
+
+using EXEC1 =
+  RAJA::KernelPolicy<
+  RAJA::statement::For<2, RAJA::omp_parallel_for_exec,
+		       RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
+					    RAJA::statement::For<0, RAJA::simd_exec,
+  RAJA::statement::Lambda<0>
+					    >
+        >
       >
     >;
 
@@ -212,7 +223,7 @@ RAJA::RangeSegment k_range(k1,k2+1);
      forall3async(I,J,K, [=]RAJA_DEVICE(int i,int j,int k){
 #else
 
-     RAJA::kernel<EXEC1>(
+     RAJA::kernel<EXEC>(
 			     RAJA::make_tuple(k_range, j_range,i_range),
 			     [=]RAJA_DEVICE (int k,int j,int i) {
 #endif

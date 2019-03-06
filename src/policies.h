@@ -24,12 +24,21 @@ using REDUCE_POLICY = RAJA::cuda_reduce;
 using EXEC_CARTBC=
   RAJA::KernelPolicy<
   RAJA::statement::For<0, RAJA::omp_parallel_for_exec,
-  RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
-  RAJA::statement::Lambda<0>
-        >
+		       RAJA::statement::For<1, RAJA::omp_parallel_for_exec,
+					    RAJA::statement::For<2, RAJA::omp_parallel_for_exec,
+								 RAJA::statement::Lambda<0>>
+		       >
       >
     >;
 
+
+// using EXEC_CARTBC =
+//     RAJA::KernelPolicy<
+//       RAJA::statement::Collapse<RAJA::omp_parallel_collapse_exec,
+//                                 RAJA::ArgList<0,1,2>,
+//         RAJA::statement::Lambda<0>
+//       >
+//     >;
 // typedef NestedPolicy<ExecList<omp_parallel_for_exec,omp_parallel_for_exec,
 //   omp_parallel_for_exec>>
 //   EXEC_CARTBC;

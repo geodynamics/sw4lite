@@ -3192,6 +3192,8 @@ void EW::ForceOffload(float_sw4 a_t, vector<Sarray> & a_F, vector<GridPointSourc
 	    GPSL[s]->getFxyztt(a_t,fxyz);
 	  else
 	    GPSL[s]->getFxyz(a_t,fxyz);
+	  //for (int i=0;i<3;i++) std::cout<<fxyz[i]<<",";
+	  //std::cout<<"\n";
 	  for (int i=0;i<3;i++)
 	    *ForceAddress_copy[index+i]+=fxyz[i];
 	  //fptr[ind1]      += fxyz[0];
