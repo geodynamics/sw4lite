@@ -780,7 +780,7 @@ void EW::addsgd4fort( int ifirst, int ilast, int jfirst, int jlast,
 	    for( int i=ifirst+2; i <= ilast-2 ; i++ )
 	    {
 	       float_sw4 birho=beta/rho(i,j,k);
-#pragma simd
+#pragma omp simd
 #pragma ivdep
 	       for( int c=0 ; c < 3 ; c++ )
 	       {
@@ -882,7 +882,7 @@ void EW::addsgd6fort( int ifirst, int ilast, int jfirst, int jlast,
 	    for( int i=ifirst+3; i <= ilast-3 ; i++ )
 	    {
 	       float_sw4 birho=0.5*beta/rho(i,j,k);
-#pragma simd
+#pragma omp simd
 #pragma ivdep
 	       for( int c=0 ; c < 3 ; c++ )
 	       {
@@ -986,7 +986,7 @@ void EW::addsgd4fort_indrev( int ifirst, int ilast, int jfirst, int jlast,
 #pragma omp parallel for
       for( int k=kfirst+2; k <= klast-2 ; k++ )
 	 for( int j=jfirst+2; j <= jlast-2 ; j++ )
-#pragma simd
+#pragma omp simd
 #pragma ivdep
 	    for( int i=ifirst+2; i <= ilast-2 ; i++ )
 	    {
@@ -1088,7 +1088,7 @@ void EW::addsgd6fort_indrev( int ifirst, int ilast, int jfirst, int jlast,
 #pragma omp parallel for
       for( int k=kfirst+3; k <= klast-3 ; k++ )
 	 for( int j=jfirst+3; j <= jlast-3 ; j++ )
-#pragma simd
+#pragma omp simd
 #pragma ivdep
 	    for( int i=ifirst+3; i <= ilast-3 ; i++ )
 	    {
@@ -1188,7 +1188,7 @@ void EW::addsgd4cfort( int ifirst, int ilast, int jfirst, int jlast,
 	    for( int i=ifirst+2; i <= ilast-2 ; i++ )
 	    {
 	       float_sw4 irhoj=beta/(rho(i,j,k)*jac(i,j,k));
-#pragma simd
+#pragma omp simd
 #pragma ivdep
 	       for( int c=0 ; c < 3 ; c++ )
 	       {
@@ -1269,7 +1269,7 @@ void EW::addsgd6cfort( int ifirst, int ilast, int jfirst, int jlast,
 	    for( int i=ifirst+3; i <= ilast-3 ; i++ )
 	    {
 	       float_sw4 birho=0.5*beta/(rho(i,j,k)*jac(i,j,k));
-#pragma simd
+#pragma omp simd
 #pragma ivdep
 	       for( int c=0 ; c < 3 ; c++ )
 	       {
@@ -1350,7 +1350,7 @@ void EW::addsgd4cfort_indrev( int ifirst, int ilast, int jfirst, int jlast,
 #pragma omp parallel for
       for( int k=kfirst+2; k <= klast-2 ; k++ )
 	 for( int j=jfirst+2; j <= jlast-2 ; j++ )
-#pragma simd
+#pragma omp simd
 #pragma ivdep
 	    for( int i=ifirst+2; i <= ilast-2 ; i++ )
 	    {
@@ -1431,7 +1431,7 @@ void EW::addsgd6cfort_indrev(  int ifirst, int ilast, int jfirst, int jlast,
 #pragma omp parallel for
       for( int k=kfirst+3; k <= klast-3 ; k++ )
 	 for( int j=jfirst+3; j <= jlast-3 ; j++ )
-#pragma simd
+#pragma omp simd
 #pragma ivdep
 	    for( int i=ifirst+3; i <= ilast-3 ; i++ )
 	    {

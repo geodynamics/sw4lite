@@ -28,17 +28,18 @@ ifeq ($(findstring chebyshev,$(HOSTNAME)),chebyshev)
   OMPOPT = -Xpreprocessor -fopenmp
   EXTRA_LINK_FLAGS = -framework Accelerate -lomp -L/usr/local/Cellar/gcc/8.2.0/lib/gcc/8 -lgfortran
   openmp = yes
-# LC quartz is a large cluster of Intel Haswell nodes
   computername := chebyshev
+# LC quartz is a large cluster of Intel Haswell nodes
 else ifeq ($(findstring quartz,$(HOSTNAME)),quartz)
-  FC = mpifort
+  FC = mpif90
   CXX = mpicxx
-  OMPOPT = -qopenmp
-  MKL_PATH = /usr/tce/packages/mkl/mkl-11.3.3/lib
+  OMPOPT = -fopenmp
+#  MKL_PATH = /usr/tce/packages/mkl/mkl-11.3.3/lib
   RAJA_LOCATION=/g/g12/andersp/src/RAJA/install/usr/local
   EXTRA_CXX_FLAGS = -xCORE-AVX2
   EXTRA_FORT_FLAGS = -xCORE-AVX2
-  EXTRA_LINK_FLAGS = -Wl,-rpath=$(SW4ROOT)/lib -Wl,-rpath=${MKL_PATH} -L${MKL_PATH} -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -lifcore
+  EXTRA_LINK_FLAGS = -Wl,-rpath=$(SW4ROOT)/lib -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -lifcore
+#  EXTRA_LINK_FLAGS = -Wl,-rpath=$(SW4ROOT)/lib -Wl,-rpath=${MKL_PATH} -L${MKL_PATH} -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -ldl -lifcore
   openmp = yes
   computername := quartz
 # LC cab is a large cluster of Intel Xeon nodes
