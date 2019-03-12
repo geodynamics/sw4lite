@@ -30,12 +30,11 @@
 ! # along with this program; if not, write to the Free Software
 ! # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA 
 module dgmodule
-
 contains
 
   SUBROUTINE get_comm_sides(x_in_b,x_in_e,y_in_b,y_in_e,&
        v_in_all_faces,w_in_all_faces,&
-       ifirst,ilast,jfirst,jlast,kfirst,klast,nint) bind(c)
+       ifirst,ilast,jfirst,jlast,kfirst,klast,nint) bind(c, name="get_comm_sides")
     !
     USE type_defs
     IMPLICIT NONE
@@ -77,7 +76,7 @@ contains
   END SUBROUTINE get_comm_sides
 
   SUBROUTINE put_comm_sides(x_out_b,x_out_e,y_out_b,y_out_e,v_out_all_faces,w_out_all_faces,&
-       ifirst,ilast,jfirst,jlast,kfirst,klast,nint) bind(c)
+       ifirst,ilast,jfirst,jlast,kfirst,klast,nint) bind(c, name="put_comm_sides")
     !
     USE type_defs
     IMPLICIT NONE
@@ -121,7 +120,7 @@ contains
 
   SUBROUTINE compute_time_derivatives(utdg,vtdg,udg,vdg,force_u,force_v,&
        MU,MV,SU,SV,&
-       ifirst,ilast,jfirst,jlast,kfirst,klast,q_v,q_u) bind(c)
+       ifirst,ilast,jfirst,jlast,kfirst,klast,q_v,q_u) bind(c, name="compute_time_derivatives")
     !
     USE type_defs
     IMPLICIT NONE
@@ -163,7 +162,8 @@ contains
 
   SUBROUTINE compute_numerical_fluxes(v_out_all_faces,v_in_all_faces,w_out_all_faces,w_in_all_faces,&
        v_star_all_faces,w_star_all_faces,&
-       ifirst,ilast,jfirst,jlast,kfirst,klast,nint,lambda_lame,mu_lame,rho) bind(c)
+       ifirst,ilast,jfirst,jlast,kfirst,klast,nint,lambda_lame,mu_lame,rho)&
+       bind(c, name="compute_numerical_fluxes")
     !
     USE type_defs
     IMPLICIT NONE
@@ -204,7 +204,7 @@ contains
 
 
   SUBROUTINE pass_outside_fluxes(v_out_all_faces,v_in_all_faces,w_out_all_faces,w_in_all_faces,&
-       ifirst,ilast,jfirst,jlast,kfirst,klast,nint) bind(c)
+       ifirst,ilast,jfirst,jlast,kfirst,klast,nint) bind(c, name="pass_outside_fluxes")
     !
     USE type_defs
     IMPLICIT NONE
@@ -237,7 +237,7 @@ contains
   END SUBROUTINE pass_outside_fluxes
 
   SUBROUTINE set_boundary_conditions(v_out_all_faces,v_in_all_faces,w_out_all_faces,w_in_all_faces,&
-       ifirst,ilast,jfirst,jlast,kfirst,klast,nint,sbx_b,sbx_e,sby_b,sby_e,bc_type) bind(c)
+       ifirst,ilast,jfirst,jlast,kfirst,klast,nint,sbx_b,sbx_e,sby_b,sby_e,bc_type) bind(c, name="set_boundary_conditions")
     !
     USE type_defs
     IMPLICIT NONE
@@ -362,7 +362,7 @@ contains
     end if
   END SUBROUTINE set_boundary_conditions
 
-  SUBROUTINE taylor_swap(utdg,vtdg,updg,vpdg,udg,vdg,df,ifirst,ilast,jfirst,jlast,kfirst,klast,q_v,q_u) bind(c)
+  SUBROUTINE taylor_swap(utdg,vtdg,updg,vpdg,udg,vdg,df,ifirst,ilast,jfirst,jlast,kfirst,klast,q_v,q_u) bind(c, name="taylor_swap")
     !
     USE type_defs
     IMPLICIT NONE
@@ -381,7 +381,7 @@ contains
 
   END SUBROUTINE taylor_swap
 
-  SUBROUTINE start_next_step(updg,vpdg,udg,vdg,ifirst,ilast,jfirst,jlast,kfirst,klast,q_v,q_u) bind(c)
+  SUBROUTINE start_next_step(updg,vpdg,udg,vdg,ifirst,ilast,jfirst,jlast,kfirst,klast,q_v,q_u) bind(c, name="start_next_step")
     !
     USE type_defs
     IMPLICIT NONE
@@ -398,7 +398,7 @@ contains
   END SUBROUTINE start_next_step
 
   SUBROUTINE get_initial_data(udg,vdg,ifirst,ilast,jfirst,jlast,kfirst,klast,&
-       h,q_v,q_u,nint,id_type) bind(c)
+       h,q_v,q_u,nint,id_type) bind(c, name="get_initial_data")
     !
     USE type_defs
     IMPLICIT NONE
@@ -1264,7 +1264,7 @@ contains
 
   END SUBROUTINE ASSEMBLE
 
-  SUBROUTINE ASSEMBLE_CONST_COEFF(MU,MV,SU,SV,LU,LV,q_u,q_v,nint,hx,lambda_lame,mu_lame,rho) bind(c)
+  SUBROUTINE ASSEMBLE_CONST_COEFF(MU,MV,SU,SV,LU,LV,q_u,q_v,nint,hx,lambda_lame,mu_lame,rho) bind(c, name="assemble_const_coeff")
     USE type_defs
     IMPLICIT NONE
     INTEGER, intent(inout)  :: q_u,q_v,nint
@@ -2212,7 +2212,7 @@ contains
   END SUBROUTINE build_my_w
 
   SUBROUTINE build_my_v_const_coeff(vdg,v_all_faces,ifirst,ilast,jfirst,jlast,kfirst,klast,&
-       q_v,nint) bind(c)
+       q_v,nint) bind(c, name="build_my_v_const_coeff")
 
     USE type_defs
     IMPLICIT NONE
@@ -2293,7 +2293,7 @@ contains
   END SUBROUTINE build_my_v_const_coeff
 
   SUBROUTINE build_my_w_const_coeff(udg,w_all_faces,ifirst,ilast,jfirst,jlast,kfirst,klast,&
-       h,q_u,nint,lambda_lame,mu_lame) bind(c)
+       h,q_u,nint,lambda_lame,mu_lame) bind(c, name="build_my_w_const_coeff")
     !
     USE type_defs
     IMPLICIT NONE
@@ -2436,7 +2436,7 @@ contains
 
 
   SUBROUTINE compute_single_mode_error(l2_err,udg,ifirst,ilast,jfirst,jlast,&
-       kfirst,klast,h,t,q_u,nint) bind(c)
+       kfirst,klast,h,t,q_u,nint) bind(c, name="compute_single_mode_error")
     !
     USE type_defs
     IMPLICIT NONE
@@ -2513,7 +2513,7 @@ contains
   END SUBROUTINE compute_single_mode_error
 
   SUBROUTINE compute_point_dirac_error(l2_err,udg,ifirst,ilast,jfirst,jlast,&
-       kfirst,klast,h,t,q_u,nint,parameters) bind(c)
+       kfirst,klast,h,t,q_u,nint,parameters) bind(c, name="compute_point_dirac_error")
     !
     USE type_defs
     IMPLICIT NONE
@@ -2620,7 +2620,7 @@ contains
   END SUBROUTINE compute_point_dirac_error
 
 
-  SUBROUTINE factor(MU,MV,q_u,q_v) bind(c)
+  SUBROUTINE factor(MU,MV,q_u,q_v) bind(c, name="factor")
     !
     USE type_defs
     IMPLICIT NONE
@@ -2651,7 +2651,7 @@ contains
 
   SUBROUTINE compute_surface_integrals(v_in_all_faces,v_star_all_faces,&
        w_star_all_faces,force_u,force_v,LU,LV,h,q_u,q_v,nint,&
-       ifirst,ilast,jfirst,jlast,kfirst,klast) bind(c)
+       ifirst,ilast,jfirst,jlast,kfirst,klast) bind(c, name="compute_surface_integrals")
     !
     use type_defs
     IMPLICIT NONE
@@ -2787,7 +2787,7 @@ contains
 
   END SUBROUTINE compute_surface_integrals
 
-  SUBROUTINE EVAL_LEGENDRE(P,Pr,qu,x) bind(c)
+  SUBROUTINE EVAL_LEGENDRE(P,Pr,qu,x) bind(c, name="eval_legendre")
     !
     USE type_defs
     IMPLICIT NONE
@@ -2811,7 +2811,7 @@ contains
   END SUBROUTINE EVAL_LEGENDRE
 
   SUBROUTINE get_recorder(udg,vdg,urec,vrec,ifirst,ilast,jfirst,jlast,kfirst,klast,q_v,q_u,&
-       Px,Prx,Py,Pry,Pz,Prz,ix,iy,iz,ncomponents) bind(c)
+       Px,Prx,Py,Pry,Pz,Prz,ix,iy,iz,ncomponents) bind(c, name="get_recorder")
     !
     USE type_defs
     IMPLICIT NONE
@@ -2837,7 +2837,7 @@ contains
     end do
   END SUBROUTINE get_recorder
 
-  SUBROUTINE get_dirac_source(point_src,px,py,pz,q_v) bind(c)
+  SUBROUTINE get_dirac_source(point_src,px,py,pz,q_v) bind(c, name="get_dirac_source")
     !
     USE type_defs
     IMPLICIT NONE
@@ -2857,7 +2857,7 @@ contains
 
   SUBROUTINE add_dirac_source(force_v,point_src,f_amp,source_tay_coeff,&
        ifirst,ilast,jfirst,jlast,kfirst,klast,q_v,&
-       ix,iy,iz) bind(c)
+       ix,iy,iz) bind(c, name="add_dirac_source")
     !
     USE type_defs
     IMPLICIT NONE
@@ -2873,7 +2873,7 @@ contains
     end do
   END SUBROUTINE add_dirac_source
 
-  SUBROUTINE set_tay_weights(tg,ct,nsrc,ntay) bind(c)
+  SUBROUTINE set_tay_weights(tg,ct,nsrc,ntay) bind(c, name="set_tay_weights")
     use type_defs
     IMPLICIT NONE
     INTEGER :: ntay,nsrc,i
@@ -2888,7 +2888,7 @@ contains
 
   END SUBROUTINE set_tay_weights
 
-  SUBROUTINE get_source_tay_coeff(source_tay_coeff,tg,ct,nsrc,ntay,t,dt) bind(c)
+  SUBROUTINE get_source_tay_coeff(source_tay_coeff,tg,ct,nsrc,ntay,t,dt) bind(c, name="get_source_tay_coeff")
     use type_defs
     IMPLICIT NONE
     INTEGER :: ntay,nsrc,i
