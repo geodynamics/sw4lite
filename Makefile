@@ -21,16 +21,15 @@ HOSTNAME := $(shell hostname)
 # default optimization level (may be modified below)
 OPT = -O3
 
-# Fourier is Anders' mac powerbook
-ifeq ($(findstring fourier,$(HOSTNAME)),fourier)
+# Chebyshev is Anders' mac powerbook
+ifeq ($(findstring chebyshev,$(HOSTNAME)),chebyshev)
   FC = mpif90
-  CC = gcc
   CXX = mpicxx
-  OMPOPT = -fopenmp
-  EXTRA_LINK_FLAGS = -framework Accelerate -L/opt/local/lib/gcc7 -lgfortran
+  OMPOPT = -Xpreprocessor -fopenmp
+  EXTRA_LINK_FLAGS = -framework Accelerate -lomp -L/usr/local/Cellar/gcc/8.2.0/lib/gcc/8 -lgfortran
   openmp = yes
 # LC quartz is a large cluster of Intel Haswell nodes
-  computername := fourier
+  computername := chebyshev
 else ifeq ($(findstring quartz,$(HOSTNAME)),quartz)
   FC = mpifort
   CXX = mpicxx
