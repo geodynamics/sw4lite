@@ -55,6 +55,18 @@ else ifeq ($(findstring lassen,$(HOSTNAME)),lassen)
    EXTRA_LINK_FLAGS = -O3 -lmpi_ibm -L/usr/tcetmp/packages/lapack/lapack-3.6.0-xlf-15.1.5/lib -llapack -L/usr/tcetmp/packages/blas/blas-3.6.0-xlf-15.1.5/lib -lblas -lcudart -L$(CUDA_LIBS) -lnvToolsExt /usr/tce/packages/xl/xl-beta-2017.11.28/lib/libxlf90.so.1 /usr/tce/packages/xl/xl-beta-2017.11.28/lib/libxlfmath.so.1
    LINKER = mpicxx
    computername := lassen
+else ifeq ($(findstring login,$(HOSTNAME)),login)
+   FC  = mpif90
+   CXX = nvcc
+   RAJA_LOCATION = /autofs/nccs-svm1_home1/rameshp/RAJA/RAJA-0.7.0/install
+   CUDA_LIBS = $(CUDA_HOME)/lib64
+   OPT = -DUNRAJA=1 -O3 -dc -ccbin mpicxx -Xcompiler="" --expt-extended-lambda -restrict -arch=sm_70 -DRAJA03=1 -I$(RAJA_LOCATION)/include  --x cu -DUSE_NVTX -DRAJA_USE_CUDA -DSW4_CROUTINES -DRAJA_USE_RESTRICT_PTR -DCUDA_CODE -DRAJA_ENABLE_NESTED
+# Gnu blas/lapack libraries:
+# #   EXTRA_LINK_FLAGS = -lmpi_ibm -L/usr/tcetmp/packages/lapack/lapack-3.6.0-gfortran-4.8.5/lib -llapack -L/usr/tcetmp/packages/blas/blas-3.6.0-gfortran-4.8.5/lib -lblas -lgfortran -lcudart -L$(CUDA_LIBS) -lnvToolsExt
+# # xlf blas/lapack libraries:
+    EXTRA_LINK_FLAGS = -O3 -L $(OLCF_XLF_ROOT)/lib/ -L $(OLCF_NETLIB_LAPACK_ROOT)/lib64 -lmpi_ibm -llapack -lblas -L $(OLCF_CUDA_ROOT)/lib64 -lcudart -L$(CUDA_LIBS) -lnvToolsExt -lxlf90 -lxlfmath
+       LINKER = mpicxx
+      computername := summit
 # LC cab is a large cluster of Intel Xeon nodes
 else ifeq ($(findstring cab,$(HOSTNAME)),cab)
 # assumes: use ic_16.0.210, use mvapich2-intel-2.1
