@@ -1,45 +1,32 @@
-# Sw4lite
+# Sw4lite RAJA
 **Sw4lite** is a bare bone version of [SW4](https://geodynamics.org/cig/software/sw4) ([Github](https://github.com/geodynamics/sw4)) intended for testing performance optimizations in a few
 important numerical kernels of SW4.
 
 To build
 --------
-The Makefiles are suited for our systems at LLNL and LBNL; you will have to modify them to suit your system.
+1. git clone and install  RAJA 0.7.0 ( https://github.com/LLNL/RAJA/releases )
+   1.1 On machines with GPUs install RAJA with CUDA enabled and OpenMP disabled
+   1.2 On CPU only machines do a default install of RAJA ( usesOpenMP)
+2. Edit the makefile and point RAJA_LOCATION to install above
+3. On Summit : ml cuda netlib-lapack/3.8.0
+4. Compile using : 
+   4.1 CUDA:  make ckernel=yes openmp=no raja=yes -j
+   4.2 OpenMP: make ckernel=yes openmp=yes raja=yes -j 
 
-Type:
-```
-make
-```
-to build the code with OpenMP. The executable will be named `optimize_mp_hostname/sw4lite`.
-
-A debug version with OpenMP can be built by:
-```
-make debug=yes
-```
-which will be located at `debug_mp_hostname/sw4lite`.
-
-To build with only C code (no Fortran) and with OpenMP, type:
-```
-make ckernel=yes
-```
-The executable will be `optimize_mp_c_hostname/sw4lite`.
-
-To build without OpenMP type:
-```
-make openmp=no
-```
-The executable will be `optimize_hostname/sw4lite`.
-
-The Cuda version is built by:
-```
-make -f Makefile.cuda
-```
-and the executable will be under `optimize_cuda_hostname/sw4lite`.
-
-More options are described in the Makefile.
 
 To run
 ------
+
+CUDA Version:
+
+The CUDA version has only been tesed on CORAL and CORAL-EA systems with Power8/9 processors and Nvidia P100/V100 GPUs
+with Unified Memory
+
+On LLNL machines use : lrun -T4 ./sw4lite <input_file>
+On ORNL machines use: jsrun -n <number of ranks = num_nodes *6 > -g1 -a1 -c7 ./sw4lite <inpout_file>
+
+
+OpenMP Version:
 
 To run sw4lite with OpenMP threading, you need to assign the number of threads per
 MPI-task by setting the environment variable OMP_NUM_THREADS, e.g.,
