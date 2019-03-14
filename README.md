@@ -30,11 +30,11 @@ with Unified Memory
 
 On LLNL machines :
 ```
-   lrun -T4 ./sw4lite <input_file>
+   lrun -T4 sw4lite <input_file>
 ```
 On ORNL machines use: 
 ```
-jsrun -n <number of ranks = num_nodes *6 > -g1 -a1 -c7 ./sw4lite <input_file>
+jsrun -n <num_nodes *6> -g1 -a1 -c7 sw4lite <input_file>
 ```
 
 OpenMP Version:
