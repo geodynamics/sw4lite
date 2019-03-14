@@ -10,8 +10,14 @@ To build
 2. Edit the makefile and point RAJA_LOCATION to install above
 3. On Summit : ml cuda netlib-lapack/3.8.0
 4. Compile using : 
-   4.1 CUDA:  make ckernel=yes openmp=no raja=yes -j
-   4.2 OpenMP: make ckernel=yes openmp=yes raja=yes -j 
+   4.1 CUDA:  
+```
+   make ckernel=yes openmp=no raja=yes -j
+```
+   4.2 OpenMP: 
+```
+   make ckernel=yes openmp=yes raja=yes -j 
+```
 
 
 To run
@@ -22,9 +28,14 @@ CUDA Version:
 The CUDA version has only been tesed on CORAL and CORAL-EA systems with Power8/9 processors and Nvidia P100/V100 GPUs
 with Unified Memory
 
-On LLNL machines use : lrun -T4 ./sw4lite <input_file>
-On ORNL machines use: jsrun -n <number of ranks = num_nodes *6 > -g1 -a1 -c7 ./sw4lite <inpout_file>
-
+On LLNL machines :
+```
+   lrun -T4 ./sw4lite <input_file>
+```
+On ORNL machines use: 
+```
+jsrun -n <number of ranks = num_nodes *6 > -g1 -a1 -c7 ./sw4lite <input_file>
+```
 
 OpenMP Version:
 
