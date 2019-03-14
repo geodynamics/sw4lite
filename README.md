@@ -5,19 +5,13 @@ important numerical kernels of SW4.
 To build
 --------
 1. git clone and install  RAJA 0.7.0 ( https://github.com/LLNL/RAJA/releases )
-   1.1 On machines with GPUs install RAJA with CUDA enabled and OpenMP disabled
-   1.2 On CPU only machines do a default install of RAJA ( usesOpenMP)
+   1. On machines with GPUs install RAJA with CUDA enabled and OpenMP disabled
+   2. On CPU only machines do a default install of RAJA ( uses OpenMP)
 2. Edit the makefile and point RAJA_LOCATION to install above
 3. On Summit : ml cuda netlib-lapack/3.8.0
 4. Compile using : 
-   4.1 CUDA:  
-```
-   make ckernel=yes openmp=no raja=yes -j
-```
-   4.2 OpenMP: 
-```
-   make ckernel=yes openmp=yes raja=yes -j 
-```
+   1. CUDA:  ```make ckernel=yes openmp=no raja=yes -j```
+   2. OpenMP:  ``` make ckernel=yes openmp=yes raja=yes -j ```
 
 
 To run
