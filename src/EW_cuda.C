@@ -1752,6 +1752,23 @@ void EW::communicate_arrayCU_X( Sarray& u, int g , int st)
 
       SafeCudaCall( cudaStreamSynchronize(m_cuobj->m_stream[st]) );
 
+#ifdef SW4_NONBLOCKING
+      // X-direction communication with non-blocking MPI
+      // First post receives, then send edges to neighbors
+      // TODO: Waits on Isends may be done lazily for more optimization,
+      //       only the recvs are needed to proceed
+      MPI_Request requests[4];
+      MPI_Status statuses[4];
+      MPI_Irecv(&dev_SideEdge_Recv[g][idx_down], n_m_ppadding1, m_mpifloat, m_neighbor[0],
+                xtag1, m_cartesian_communicator, &requests[0]);
+      MPI_Irecv(&dev_SideEdge_Recv[g][idx_up], n_m_ppadding1, m_mpifloat, m_neighbor[1],
+                xtag2, m_cartesian_communicator, &requests[1]);
+      MPI_Isend(&dev_SideEdge_Send[g][idx_up], n_m_ppadding1, m_mpifloat, m_neighbor[1],
+                xtag1, m_cartesian_communicator, &requests[2]);
+      MPI_Isend(&dev_SideEdge_Send[g][idx_down], n_m_ppadding1, m_mpifloat, m_neighbor[0],
+                xtag2, m_cartesian_communicator, &requests[3]);
+      MPI_Waitall(4, requests, statuses);
+#else
       // X-direction communication
       MPI_Sendrecv(&dev_SideEdge_Send[g][idx_up], n_m_ppadding1, m_mpifloat,
                    m_neighbor[1], xtag1, &dev_SideEdge_Recv[g][idx_down],
@@ -1760,6 +1777,7 @@ void EW::communicate_arrayCU_X( Sarray& u, int g , int st)
       MPI_Sendrecv(&dev_SideEdge_Send[g][idx_down], n_m_ppadding1, m_mpifloat,
                    m_neighbor[0], xtag2, &dev_SideEdge_Recv[g][idx_up],
 		   n_m_ppadding1, m_mpifloat, m_neighbor[1], xtag2, m_cartesian_communicator, &status);
+#endif // SW4_NONBLOCKING
 
 #else
 
@@ -1779,6 +1797,23 @@ void EW::communicate_arrayCU_X( Sarray& u, int g , int st)
           exit(1);
         }
 
+#ifdef SW4_NONBLOCKING
+      // X-direction communication with non-blocking MPI
+      // First post receives, then send edges to neighbors
+      // TODO: Waits on Isends may be done lazily for more optimization,
+      //       only the recvs are needed to proceed
+      MPI_Request requests[4];
+      MPI_Status statuses[4];
+      MPI_Irecv(&m_SideEdge_Recv[g][idx_down], n_m_ppadding1, m_mpifloat, m_neighbor[0],
+                xtag1, m_cartesian_communicator, &requests[0]);
+      MPI_Irecv(&m_SideEdge_Recv[g][idx_up], n_m_ppadding1, m_mpifloat, m_neighbor[1],
+                xtag2, m_cartesian_communicator, &requests[1]);
+      MPI_Isend(&m_SideEdge_Send[g][idx_up], n_m_ppadding1, m_mpifloat, m_neighbor[1],
+                xtag1, m_cartesian_communicator, &requests[2]);
+      MPI_Isend(&m_SideEdge_Send[g][idx_down], n_m_ppadding1, m_mpifloat, m_neighbor[0],
+                xtag2, m_cartesian_communicator, &requests[3]);
+      MPI_Waitall(4, requests, statuses);
+#else
       // Send and receive with MPI
       MPI_Sendrecv(&m_SideEdge_Send[g][idx_up], n_m_ppadding1, m_mpifloat,
                    m_neighbor[1], xtag1, &m_SideEdge_Recv[g][idx_down],
@@ -1787,7 +1822,8 @@ void EW::communicate_arrayCU_X( Sarray& u, int g , int st)
       MPI_Sendrecv(&m_SideEdge_Send[g][idx_down], n_m_ppadding1, m_mpifloat,
                    m_neighbor[0], xtag2, &m_SideEdge_Recv[g][idx_up],
                    n_m_ppadding1, m_mpifloat, m_neighbor[1], xtag2, m_cartesian_communicator, &status);
-      
+#endif // SW4_NONBLOCKING
+
       // Copy buffers to device
       if (m_neighbor[1] != MPI_PROC_NULL)
         cudaMemcpyAsync(&dev_SideEdge_Recv[g][idx_up], &m_SideEdge_Recv[g][idx_up],
@@ -1867,6 +1903,23 @@ void EW::communicate_arrayCU_Y( Sarray& u, int g , int st)
 
       SafeCudaCall( cudaStreamSynchronize(m_cuobj->m_stream[st]) );
 
+#ifdef SW4_NONBLOCKING
+      // Y-direction communication with non-blocking MPI
+      // First post receives, then send edges to neighbors
+      // TODO: Waits on Isends may be done lazily for more optimization,
+      //       only the recvs are needed to proceed
+      MPI_Request requests[4];
+      MPI_Status statuses[4];
+      MPI_Irecv(&dev_SideEdge_Recv[g][idx_right], n_m_ppadding2, m_mpifloat, m_neighbor[3],
+                ytag1, m_cartesian_communicator, &requests[0]);
+      MPI_Irecv(&dev_SideEdge_Recv[g][idx_left], n_m_ppadding2, m_mpifloat, m_neighbor[2],
+                ytag2, m_cartesian_communicator, &requests[1]);
+      MPI_Isend(&dev_SideEdge_Send[g][idx_left], n_m_ppadding2, m_mpifloat, m_neighbor[2],
+                ytag1, m_cartesian_communicator, &requests[2]);
+      MPI_Isend(&dev_SideEdge_Send[g][idx_right], n_m_ppadding2, m_mpifloat, m_neighbor[3],
+                ytag2, m_cartesian_communicator, &requests[3]);
+      MPI_Waitall(4, requests, statuses);
+#else
       // Y-direction communication
       MPI_Sendrecv(&dev_SideEdge_Send[g][idx_right], n_m_ppadding2, m_mpifloat,
                    m_neighbor[3], ytag2, &dev_SideEdge_Recv[g][idx_left],
@@ -1874,6 +1927,7 @@ void EW::communicate_arrayCU_Y( Sarray& u, int g , int st)
       MPI_Sendrecv(&dev_SideEdge_Send[g][idx_left], n_m_ppadding2, m_mpifloat,
                    m_neighbor[2], ytag1, &dev_SideEdge_Recv[g][idx_right],
                    n_m_ppadding2, m_mpifloat, m_neighbor[3], ytag1, m_cartesian_communicator, &status);
+#endif // SW4_NONBLOCKING
 
 #else
 
@@ -1894,6 +1948,23 @@ void EW::communicate_arrayCU_Y( Sarray& u, int g , int st)
           exit(1);
         }
 
+#ifdef SW4_NONBLOCKING
+      // Y-direction communication with non-blocking MPI
+      // First post receives, then send edges to neighbors
+      // TODO: Waits on Isends may be done lazily for more optimization,
+      //       only the recvs are needed to proceed
+      MPI_Request requests[4];
+      MPI_Status statuses[4];
+      MPI_Irecv(&m_SideEdge_Recv[g][idx_right], n_m_ppadding2, m_mpifloat, m_neighbor[3],
+                ytag1, m_cartesian_communicator, &requests[0]);
+      MPI_Irecv(&m_SideEdge_Recv[g][idx_left], n_m_ppadding2, m_mpifloat, m_neighbor[2],
+                ytag2, m_cartesian_communicator, &requests[1]);
+      MPI_Isend(&m_SideEdge_Send[g][idx_left], n_m_ppadding2, m_mpifloat, m_neighbor[2],
+                ytag1, m_cartesian_communicator, &requests[2]);
+      MPI_Isend(&m_SideEdge_Send[g][idx_right], n_m_ppadding2, m_mpifloat, m_neighbor[3],
+                ytag2, m_cartesian_communicator, &requests[3]);
+      MPI_Waitall(4, requests, statuses);
+#else
       // Send and receive with MPI
       MPI_Sendrecv(&m_SideEdge_Send[g][idx_left], n_m_ppadding2, m_mpifloat,
                    m_neighbor[2], ytag1, &m_SideEdge_Recv[g][idx_right],
@@ -1902,6 +1973,7 @@ void EW::communicate_arrayCU_Y( Sarray& u, int g , int st)
       MPI_Sendrecv(&m_SideEdge_Send[g][idx_right], n_m_ppadding2, m_mpifloat,
                    m_neighbor[3], ytag2, &m_SideEdge_Recv[g][idx_left],
                    n_m_ppadding2, m_mpifloat, m_neighbor[2], ytag2, m_cartesian_communicator, &status);      
+#endif // SW4_NONBLOCKING
 
       // Copy buffers to device
       if (m_neighbor[2] != MPI_PROC_NULL)
