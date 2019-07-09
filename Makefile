@@ -120,6 +120,14 @@ else ifeq ($(findstring ray,$(HOSTNAME)),ray)
   openmp = no
   debug = no
   computername := ray
+else ifeq ($(findstring lassen,$(HOSTNAME)),lassen)
+  FC = mpif90
+  CXX = mpicxx
+  OMPOPT = -fopenmp
+  EXTRA_LINK_FLAGS = -lgfortran -lblas -llapack
+  openmp = yes
+  debug = no
+  computername := lassen
 else
   FC  = mpif90
   CXX = mpic++

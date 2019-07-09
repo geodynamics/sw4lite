@@ -17,6 +17,16 @@ else ifeq ($(findstring surface,$(HOSTNAME)),surface)
    MPIINC = $(MPIPATH)/include
    debugdir := debug_cuda_surface
    optdir   := optimize_cuda_surface
+else ifeq ($(findstring lassen,$(HOSTNAME)),lassen)
+   NVCC = nvcc
+   HOSTCOMP = xlc++
+   FC = xlf90
+   MPIPATH = $(MPI_ROOT)
+   gpuarch := sm_70
+   EXTRA_LINK_FLAGS = -lmpi_ibm -L$(LAPACK_DIR) -llapack -lblas
+   MPIINC = $(MPIPATH)/include
+   debugdir := debug_cuda_lassen
+   optdir   := optimize_cuda_lassen
 else
    NVCC = nvcc
    HOSTCOMP = gcc
@@ -31,17 +41,17 @@ CXX  = $(NVCC)
 MPILIB = $(MPIPATH)/lib
 
 ifeq ($(debug),yes)
-   FFLAGS    = -g 
-   CXXFLAGS  = -g -x cu -I../src -c -dc -arch=$(gpuarch) -DSW4_CROUTINES -DSW4_CUDA -ccbin $(HOSTCOMP)
-   CFLAGS    = -g 
+   FFLAGS    = -g
+   CXXFLAGS  = -g -x cu -I../src -c -dc -arch=$(gpuarch) -DSW4_CROUTINES -DSW4_CUDA -DSW4_NONBLOCKING -ccbin $(HOSTCOMP)
+   CFLAGS    = -g
 else
-   FFLAGS   = -O3 
-   CXXFLAGS = -O3 -x cu -I../src -c -dc -arch=$(gpuarch) -DSW4_CROUTINES -DSW4_CUDA -ccbin $(HOSTCOMP) -Xptxas -v
-   CFLAGS   = -O 
+   FFLAGS   = -O3
+   CXXFLAGS = -O3 -x cu -I../src -c -dc -arch=$(gpuarch) -DSW4_CROUTINES -DSW4_CUDA -DSW4_NONBLOCKING -ccbin $(HOSTCOMP) -Xptxas -v
+   CFLAGS   = -O
 endif
 ifdef MPIINC
   CXXFLAGS += -I$(MPIINC)
-endif	   
+endif
 
 #FFLAGS   += -Mcuda
 
@@ -63,7 +73,7 @@ endif
 ifeq ($(single),yes)
    debugdir := $(debugdir)_sp
    optdir := $(optdir)_sp
-   CXXFLAGS += -I../src/float   
+   CXXFLAGS += -I../src/float
 else
    CXXFLAGS += -I../src/double
 endif
@@ -90,9 +100,9 @@ OBJ  = main.o EW.o Source.o rhs4sg.o rhs4sg_rev.o SuperGrid.o GridPointSource.o 
 
 FOBJ = $(addprefix $(builddir)/,$(OBJ))
 
-sw4lite: $(FOBJ) 
+sw4lite: $(FOBJ)
 	@echo "********* User configuration variables **************"
-	@echo "debug=" $(debug) " proj=" $(proj) " etree=" $(etree) " SW4ROOT"= $(SW4ROOT) 
+	@echo "debug=" $(debug) " proj=" $(proj) " etree=" $(etree) " SW4ROOT"= $(SW4ROOT)
 	@echo "CXX=" $(CXX) "EXTRA_CXX_FLAGS"= $(EXTRA_CXX_FLAGS)
 	@echo "FC=" $(FC) " EXTRA_FORT_FLAGS=" $(EXTRA_FORT_FLAGS)
 	@echo "EXTRA_LINK_FLAGS"= $(EXTRA_LINK_FLAGS)
@@ -103,15 +113,15 @@ sw4lite: $(FOBJ)
 
 #$(builddir)/device-routines.o:src/device-routines.C
 #	/bin/mkdir -p $(builddir)
-#	cd $(builddir); $(NVCC) $(CXXFLAGS) -c ../$< 
+#	cd $(builddir); $(NVCC) $(CXXFLAGS) -c ../$<
 
 $(builddir)/%.o:src/%.C
 	/bin/mkdir -p $(builddir)
-	cd $(builddir); $(CXX) $(CXXFLAGS) -c ../$< 
+	cd $(builddir); $(CXX) $(CXXFLAGS) -c ../$<
 
 $(builddir)/%.o:src/%.f
 	/bin/mkdir -p $(builddir)
-	cd $(builddir); $(FC) $(FFLAGS) -c ../$< 
+	cd $(builddir); $(FC) $(FFLAGS) -c ../$<
 
 clean:
 	/bin/mkdir -p $(optdir)

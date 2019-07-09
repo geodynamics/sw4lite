@@ -5067,7 +5067,7 @@ void EW::computeDT()
       float_sw4 dtCurv;
       int g = mNumberOfGrids-1;
       float_sw4  la, mu, la2mu;
-      int N=3, LDZ=1, INFO;
+      int N=3, LDZ=1, INFO=0;
       char JOBZ='N', UPLO='L';
       float_sw4 eigmax = -1;
       // always use double precision version of lapack routine, for simplicity
