@@ -5102,9 +5102,9 @@ void EW::computeDT()
 	       Amat[5] = -4.*(SQR(mMetric(1,i,j,k))*mu + SQR(mMetric(1,i,j,k))*mu
 			+ SQR(mMetric(2,i,j,k))*mu + SQR(mMetric(3,i,j,k))*mu + SQR(mMetric(4,i,j,k))*la2mu)*jinv;
 // calculate eigenvalues of symmetric matrix
-#ifndef SW4_CUDA
+//#ifndef SW4_CUDA
 	       F77_FUNC(dspev,DSPEV)(JOBZ, UPLO, N, Amat, W, Z, LDZ, WORK, INFO);
-#endif
+//#endif
 	       if (INFO != 0)
 	       {
 		  printf("ERROR: computeDT: dspev returned INFO = %i for grid point (%i, %i, %i)\n", INFO, i, j, k);
