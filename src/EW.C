@@ -2325,6 +2325,7 @@ void EW::setupRun()
       copy_point_sources_to_gpu( );
       init_point_sourcesCU( );
    }
+   //   MPI_Barrier(MPI_COMM_WORLD);
 // Setup I/O in check points
    if( m_restart_check_point != CheckPoint::nil )
       m_restart_check_point->setup_sizes();
@@ -2344,7 +2345,6 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
    // Pointer to Sarray on device, not sure if std::vector is available.
    Sarray* dev_F, *dev_Um, *dev_U, *dev_Up, *dev_metric, *dev_j;
    float_sw4* gridsize_dev;   
-
    // Do all timing in double, time differences have to much cancellation for float.
    double time_start_solve = MPI_Wtime();
    bool saveerror = false;
@@ -2881,13 +2881,12 @@ void EW::timesteploop( vector<Sarray>& U, vector<Sarray>& Um )
    if( m_output_detailed_timing )
       print_execution_times( time_sum );
 
-    if( m_cuobj->has_gpu() )
-       for( int g=0; g < mNumberOfGrids ; g++ )
-	  U[g].copy_from_device(m_cuobj,true,0);
-
-
    if ( m_point_source_test )
    {
+      if( m_cuobj->has_gpu() )
+         for( int g=0; g < mNumberOfGrids ; g++ )
+            U[g].copy_from_device(m_cuobj,true,0);
+
       float_sw4 errInf=0, errL2=0, solInf=0;//, solL2=0;
       exactSol( t, Up, m_globalUniqueSources ); // store exact solution in Up
 //	 //	 if (m_lamb_test)
@@ -3222,7 +3221,6 @@ void EW::evalRHS(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_L
    if( m_topography_exists )
    {
       int g=mNumberOfGrids-1;
-      char op = '=';    // Assign Uacc := L(u)
 #ifdef SW4_CROUTINES
       if( m_corder )
          rhs4sgcurv_rev( m_iStart[g], m_iEnd[g], m_jStart[g], m_jEnd[g], m_kStart[g], m_kEnd[g],
@@ -3235,6 +3233,7 @@ void EW::evalRHS(vector<Sarray> & a_U, vector<Sarray>& a_Mu, vector<Sarray>& a_L
 		     mJ.c_ptr(), a_Uacc[g].c_ptr(), m_onesided[g], m_acof, m_bope, m_ghcof,
 		     m_sg_str_x[g], m_sg_str_y[g] );
 #else      
+      char op = '=';    // Assign Uacc := L(u)
       F77_FUNC(curvilinear4sg,CURVILINEAR4SG)(&m_iStart[g], &m_iEnd[g], &m_jStart[g], &m_jEnd[g], 
 					      &m_kStart[g], &m_kEnd[g], a_U[g].c_ptr(), a_Mu[g].c_ptr(),
 					      a_Lambda[g].c_ptr(), mMetric.c_ptr(), mJ.c_ptr(), a_Uacc[g].c_ptr(),
@@ -3955,7 +3954,7 @@ void EW::get_exact_point_source( float_sw4* up, float_sw4 t, int g, Source& sour
       m0 = 1;
    }
    //   bool curvilinear = topographyExists() && g == mNumberOfGrids-1;
-   bool curvilinear = false;
+   //   bool curvilinear = false;
    //   float_sw4* up = u.c_ptr();
    float_sw4 h   = mGridSize[g];
    float_sw4 eps = 1e-3*h;
@@ -6136,10 +6135,6 @@ void EW::compute_minmax_topography( float_sw4& topo_zmin, float_sw4& topo_zmax )
 // gets negative z-values
       float_sw4 zMinLocal, zMaxLocal;
       zMaxLocal = zMinLocal = -mTopoGridExt(i,j,1);
-// tmp
-      int i_min_loc=i, i_max_loc=i;
-      int j_min_loc=j, j_max_loc=j;
-// end tmp
       int imin = mTopoGridExt.m_ib;
       int imax = mTopoGridExt.m_ie;
       int jmin = mTopoGridExt.m_jb;
@@ -6150,14 +6145,10 @@ void EW::compute_minmax_topography( float_sw4& topo_zmin, float_sw4& topo_zmax )
 	    if (-mTopoGridExt(i,j,1) > zMaxLocal)
 	    {
 	       zMaxLocal = -mTopoGridExt(i,j,1);
-	       i_max_loc = i;
-	       j_max_loc = j;
 	    }
 	    if (-mTopoGridExt(i,j,1) < zMinLocal)
 	    {
 	       zMinLocal = -mTopoGridExt(i,j,1);
-	       i_min_loc = i;
-	       j_min_loc = j;
 	    }
 	 }
       MPI_Allreduce( &zMinLocal, &topo_zmin, 1, m_mpifloat, MPI_MIN, m_cartesian_communicator);
@@ -6444,34 +6435,33 @@ void EW::sort_grid_point_sources()
 void EW::copy_point_sources_to_gpu()
 {
 #ifdef SW4_CUDA
-   cudaError_t retcode=cudaMalloc( (void**)&dev_point_sources, sizeof(GridPointSource*)*m_point_sources.size() );
+   // new code, redefined dev_point_sources to be a GridPointSource* to 
+   // be able to copy the sources to device as an array instead of copying
+   // them one by one.
+   cudaError_t retcode=cudaMalloc( (void**)&dev_point_sources, sizeof(GridPointSource)*m_point_sources.size());
    if( cudaSuccess != retcode )
-      cout << "Error EW::copy_point_sources_to_gpu, cudaMalloc, retcode = " << cudaGetErrorString(retcode) << endl;
-   GridPointSource** hdev_src = new GridPointSource*[m_point_sources.size()];
+      cout << "Error EW::copy_point_sources_to_gpu, cudaMalloc, 1, retcode = " <<
+	 cudaGetErrorString(retcode) << endl;
+
+   GridPointSource* hsources = new GridPointSource[m_point_sources.size()];
    for( int s=0 ; s < m_point_sources.size() ; s++ )
-   {
-      GridPointSource* dev_local;
-      retcode=cudaMalloc( (void**)&dev_local, sizeof(GridPointSource) );
-      if( cudaSuccess != retcode )
-	 cout << "Error EW::copy_point_sources_to_gpu, cudaMalloc, 2, retcode = " << cudaGetErrorString(retcode) << endl;
-      retcode = cudaMemcpy( dev_local, m_point_sources[s], sizeof(GridPointSource),
-			    cudaMemcpyHostToDevice );
-      if( cudaSuccess != retcode )
-	 cout << "Error EW::copy_point_sources_to_gpu, cudaMemcpy, retcode = " <<
-	    cudaGetErrorString(retcode) << endl;
-      hdev_src[s] = dev_local;
-   }
-   retcode = cudaMemcpy( dev_point_sources, hdev_src, sizeof(GridPointSource*)*m_point_sources.size(), cudaMemcpyHostToDevice);
+      hsources[s] = *(m_point_sources[s]);
+   retcode = cudaMemcpy( dev_point_sources, hsources,
+                         m_point_sources.size()*sizeof(GridPointSource),
+                         cudaMemcpyHostToDevice );
+   if( cudaSuccess != retcode )
+      cout << "Error EW::copy_point_sources_to_gpu, cudaMemcpy, 1, retcode = " <<
+	 cudaGetErrorString(retcode) << endl;
+
+   retcode = cudaMalloc( (void**)&dev_identsources, sizeof(int)*m_identsources.size() );
+   if( cudaSuccess != retcode )
+      cout << "Error EW::copy_point_sources_to_gpu, cudaMalloc, 2, retcode = " <<
+         cudaGetErrorString(retcode) << endl;
+   retcode = cudaMemcpy( dev_identsources, &m_identsources[0], sizeof(int)*m_identsources.size(), cudaMemcpyHostToDevice );
    if( cudaSuccess != retcode )
       cout << "Error EW::copy_point_sources_to_gpu, cudaMemcpy, 2, retcode = " <<
 	 cudaGetErrorString(retcode) << endl;
-   retcode = cudaMalloc( (void**)&dev_identsources, sizeof(int)*m_identsources.size() );
-   if( cudaSuccess != retcode )
-      cout << "Error EW::copy_point_sources_to_gpu, cudaMalloc, 3, retcode = " << cudaGetErrorString(retcode) << endl;
-   retcode = cudaMemcpy( dev_identsources, &m_identsources[0], sizeof(int)*m_identsources.size(), cudaMemcpyHostToDevice );
-   if( cudaSuccess != retcode )
-      cout << "Error EW::copy_point_sources_to_gpu, cudaMemcpy, 3, retcode = " <<
-	 cudaGetErrorString(retcode) << endl;
+   delete[] hsources;
 #endif
 }
 

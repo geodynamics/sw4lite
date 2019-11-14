@@ -87,9 +87,9 @@ __global__ void rhs4sgcurvupper_dev_rev( int ifirst, int ilast, int jfirst, int 
 __global__ void check_nan_dev( int ifirst, int ilast, int jfirst, int jlast, int kfirst, int klast,
 			       float_sw4* u, int* retval_dev, int* idx_dev );
 
-__global__ void forcing_dev( float_sw4 t, Sarray* dev_F, int NumberOfGrids, GridPointSource** dev_point_sources,
+__global__ void forcing_dev( float_sw4 t, Sarray* dev_F, int NumberOfGrids, GridPointSource* dev_point_sources,
 			     int nptsrc, int* dev_identsources, int nident, bool tt );
-__global__ void init_forcing_dev( GridPointSource** point_sources, int nsrc );
+__global__ void init_forcing_dev( GridPointSource* point_sources, int nsrc );
 
 __global__ void bcfortsg_dev( int ib, int ie, int jb, int je, int kb, int ke, int* wind,
                               int nx, int ny, int nz, float_sw4* u, float_sw4 h, boundaryConditionType *bccnd,

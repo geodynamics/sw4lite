@@ -101,6 +101,10 @@ GridPointSource::GridPointSource( float_sw4 frequency, float_sw4 t0,
 }
 
 //-----------------------------------------------------------------------
+GridPointSource::GridPointSource()
+{ }
+
+//-----------------------------------------------------------------------
 GridPointSource::~GridPointSource()
 {
   //   if( mPar != NULL )

@@ -459,7 +459,7 @@ class EW
    vector<Source*> m_globalUniqueSources;
    vector<GridPointSource*> m_point_sources;
    vector<int> m_identsources;
-   GridPointSource** dev_point_sources;
+   GridPointSource* dev_point_sources;
    int* dev_identsources;
 
    // Supergrid boundary conditions

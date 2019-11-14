@@ -95,9 +95,10 @@ public:
    //// discretize a time function at each time step and change the time function to be "Discrete()"
    //  void discretizeTimeFuncAndFilter(float_sw4 tStart, float_sw4 dt, int nSteps, Filter *filter_ptr);
 
+   GridPointSource();
  private:
 
-  GridPointSource();
+
 #ifdef SW4_CUDA
   __device__ void initializeTimeFunction();
 #else
