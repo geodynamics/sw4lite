@@ -950,9 +950,10 @@ void Sarray::page_unlock( EWCuda* cu )
 size_t Sarray::check_match_cpu_gpu( EWCuda* cu, string name )
 {
 
+   size_t retval = 0;
+
 #ifdef SW4_CUDA
 
-   size_t retval = 0;
    size_t npts = m_nc*m_ni*static_cast<size_t>(m_nj)*m_nk;
    size_t nsize_bytes = npts*sizeof(double);
    double* m_data_test;
@@ -999,9 +1000,9 @@ size_t Sarray::check_match_cpu_gpu( EWCuda* cu, string name )
    if( m_data_test != NULL)
        delete[] m_data_test;
 
-   return retval;
-
 #endif
+
+   return retval;
 
 }
 
@@ -1009,9 +1010,9 @@ size_t Sarray::check_match_cpu_gpu( EWCuda* cu, string name )
 size_t Sarray::check_match_cpu_gpu( EWCuda* cu, int& cfirst, int& ifirst, int& jfirst, int& kfirst , string name )
 {
 
-#ifdef SW4_CUDA
+   size_t retval = 0;
 
-   size_t retval;
+#ifdef SW4_CUDA
 
    size_t npts = m_nc*m_ni*static_cast<size_t>(m_nj)*m_nk;
    size_t nsize_bytes = npts*sizeof(double);
@@ -1072,25 +1073,25 @@ size_t Sarray::check_match_cpu_gpu( EWCuda* cu, int& cfirst, int& ifirst, int& j
 
     delete[] m_data_test;
 
-    return retval;
-
 #endif
+
+    return retval;
 
 }
 
 //-----------------------------------------------------------------------
 Sarray* Sarray::create_copy_on_device( EWCuda* cu )
 {
+   Sarray* dev_array = nullptr;
 #ifdef SW4_CUDA
    copy_to_device(cu);
-   Sarray* dev_array;
    cudaError_t retcode = cudaMalloc( (void**)&dev_array,sizeof(Sarray));
    if( retcode != cudaSuccess )
       cout << "Error creating Sarray on device. retval = " << cudaGetErrorString(retcode) << endl;
    retcode = cudaMemcpy(dev_array,this,sizeof(Sarray),cudaMemcpyHostToDevice);
    if( retcode != cudaSuccess )
       cout << "Error create_copy Sarray to device. retval = " << cudaGetErrorString(retcode) << endl;
-   return dev_array;
 #endif
+   return dev_array;
 }
-   
+
